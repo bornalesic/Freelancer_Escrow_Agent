@@ -1,0 +1,26 @@
+node_modules/
+dist/
+.env.local
+.env.*.local
+*.log
+
+# wallet + app state (never commit: contains RGB state and keys material)
+.wallets/
+.mock-ledger.json*
+apps/agent/data/
+**/data/work/
+**/data/deliverables/
+
+# models and QVAC caches
+.qvac/
+*.gguf
+
+# scratch probes
+scratch/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/*
+!.vscode/extensions.json
+.idea/

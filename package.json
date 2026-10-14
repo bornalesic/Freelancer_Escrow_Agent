@@ -1,0 +1,32 @@
+{
+  "name": "rgb-escrow-agent",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.17"
+  },
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "dev:agent": "npm run dev -w apps/agent",
+    "dev:party:client": "npm run dev:client -w apps/party",
+    "dev:party:freelancer": "npm run dev:freelancer -w apps/party",
+    "dev:ai": "npm run dev -w apps/ai",
+    "dev:web": "npm run dev -w apps/web",
+    "dev:mock": "cross-env WALLET_MODE=mock AI_MODE=mock concurrently -n agent,client,freelancer,ai,web \"npm:dev:agent\" \"npm:dev:party:client\" \"npm:dev:party:freelancer\" \"npm:dev:ai\" \"npm:dev:web\"",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "setup:role": "tsx scripts/setup-role.ts",
+    "demo:setup": "tsx scripts/setup-demo.ts",
+    "demo:reset": "tsx scripts/reset-demo.ts"
+  },
+  "devDependencies": {
+    "concurrently": "^9.0.0",
+    "cross-env": "^7.0.3",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0"
+  }
+}
