@@ -11,12 +11,15 @@ Agreement text the client types (keep it identical every rehearsal):
 > anything that isn't a letter, number or dash. The included tests must pass. Also include a README.
 > Pay 50 USDT. Deadline: 30 minutes.
 
-Two versions, each zipped with the project at the zip root (not inside a subfolder):
+Two versions, committed as plain source folders (no .zip files in the repo — organizer rule):
 
-| File | Contents | Expected verifier result |
-| ---- | -------- | ------------------------ |
-| `slugify-v1.zip` | `package.json` (`"test": "node --test"`), `slugify.js` that forgets to strip punctuation, `slugify.test.js` (4 tests), `README.md` | tests fail (1 of 4), README present |
-| `slugify-v2.zip` | same, with the bug fixed | all pass |
+| Folder | Contents | Expected verifier result |
+| ------ | -------- | ------------------------ |
+| `demo-deliverable/slugify-v1/` | `package.json` (`"test": "node --test"`), `slugify.js` that forgets to strip punctuation, `slugify.test.js` (4 tests), `README.md` | tests fail (1 of 4), README present |
+| `demo-deliverable/slugify-v2/` | same, with the bug fixed | all pass |
+
+`npm run fixtures:zip` (create it) zips each folder's contents into `fixtures/dist/` (git-ignored),
+using Node (`adm-zip` or `archiver`) so it works in both WSL and PowerShell.
 
 Rules: **zero dependencies** (only `node:test` / `node:assert`), so `npm test` runs offline in under
 2 seconds without `npm install`. Make the failing test's name self-explanatory
