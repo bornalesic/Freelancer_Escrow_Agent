@@ -76,7 +76,8 @@ If a script does not exist yet, create it in the right `package.json` rather tha
   before wiring it into app code. Record findings in that workstream's CLAUDE.md "Learned the hard way".
 - After a meaningful change: `npm run typecheck` and the workstream's tests. Fix before committing.
 - Commit small, prefix with workstream (`wallet:`, `ai:`, `agent:`, `web:`, `shared:`), on your `ws/*`
-  branch. Rebase on `main` often.
+  branch. To catch up with `main`, merge it (`git merge origin/main`). Never rebase pushed commits,
+  never `git push --force`, never amend a pushed commit (organizer rule: the judges read the history).
 - Write user-facing text (UI, log titles) in short plain English.
 - Use `/checkpoint` at stand-ups to summarize status against `docs/WORKSTREAMS.md`.
 

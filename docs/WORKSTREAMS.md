@@ -58,7 +58,8 @@ Buffer, sleep in shifts (never all four asleep), stretch goals only if the demo 
 3. Lightning hold-invoice escrow via `@utexo/wdk-rgb-lightning` (only with mentor confirmation).
 
 ## Git rules
-- `main` must always run. Work on your `ws/*` branch, rebase on `main` at least every 2 hours.
+- `main` must always run. Work on your `ws/*` branch and merge `main` into it at least every 2 hours
+  (`git merge origin/main`). Never rebase pushed commits and never force-push (organizer rule).
 - Small commits, message prefix by workstream: `wallet:`, `ai:`, `agent:`, `web:`, `shared:`.
 - Only WS3 merges changes to `packages/shared` (see `.claude/commands/contract-change.md`).
 - Never commit `.env.local`, mnemonics, `data/` folders or model files.
