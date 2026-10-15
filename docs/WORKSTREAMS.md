@@ -63,3 +63,4 @@ Buffer, sleep in shifts (never all four asleep), stretch goals only if the demo 
 - Small commits, message prefix by workstream: `wallet:`, `ai:`, `agent:`, `web:`, `shared:`.
 - Only WS3 merges changes to `packages/shared` (see `.claude/commands/contract-change.md`).
 - Never commit `.env.local`, mnemonics, `data/` folders or model files.
+- All `ws/*` branches merged into `main` by Sun 12:15; final commit pushed to `main` by 12:45. Nothing pushed after 13:00 counts.
