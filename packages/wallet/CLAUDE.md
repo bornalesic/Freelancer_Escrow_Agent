@@ -18,7 +18,9 @@ only — the native RGB binaries have no Windows build.
      feeRate, minConfirmations })`.
    - `refresh()`: `refreshWallet()`; `transfers()`: map `listTransfers`/`getTransfers` output to
      `TransferSummary` (`pending|settled|failed`, keep `rawStatus`).
-   - `waitForTransfer()`: loop `refresh()` + `transfers()` every `POLL_MS` (2000) until settled/failed/timeout.
+   - `waitForTransfer()`: loop `refresh()` + `transfers()` every `WALLET_POLL_MS` (env; 2000 on
+     regtest, ≥ 10000 on signet: KaleidoSwap asked teams not to poll their esplora in tight loops)
+     until settled/failed/timeout.
    - `sign()`: account `sign(message)` + `getAddress()`.
    - Serialize all calls through one in-process queue (rgb-lib does not like concurrent calls).
 3. **Factory** `createWallet({ role, mode })` reading env: `WALLET_MODE`, `RGB_NETWORK`, `RGB_DATA_DIR`,
@@ -36,9 +38,15 @@ only — the native RGB binaries have no Windows build.
 ## Facts already verified (from docs, Oct 2026)
 - Package: `@utexo/wdk-wallet-rgb`, default export `WalletManagerRgb(seed, config)`; one account (index 0)
   via `getAccount()`. Beta. ESM. Wraps `@utexo/rgb-lib-bare` + `@utexo/rgb-sdk`.
-- Released 2.0.3: native artifacts for Linux x64/arm64 and macOS arm64 only. Networks in the released
-  docs: `mainnet | testnet | regtest`. The `main` README also lists `utexo` / `signet` — don't use
-  those unless a UTEXO mentor confirms.
+- Released 2.0.3 (still the latest on npm): native artifacts for Linux x64/arm64 and macOS arm64 only.
+  It pins `@utexo/rgb-sdk` **1.0.3** → rgb-lib **0.3.0-beta.8**, whose Linux binary needs
+  **glibc ≥ 2.38** (Ubuntu 24.04 yes, 22.04 no). Check with `ldd --version`.
+- **Do not override `@utexo/rgb-sdk`** (e.g. to 1.0.6, whose binary needs only glibc 2.34). Another team
+  found the same mnemonic then derives a **different wallet** (vanillaKeychain 0 instead of 1). If an
+  override is ever unavoidable, every laptop and script must use it from the very first wallet creation.
+- Networks: the 2.0.3 types say `mainnet | testnet | regtest`, but the wrapper passes `network` straight
+  to rgb-sdk, which also accepts `signet` (UTEXO confirmed plain signet works; `signetcustom` does not).
+  Extend the local type augmentation to include `'signet'` if we switch.
 - The 2.0.3 TypeScript types omit `dataDir`, `indexerUrl`, `transportEndpoint` even though the runtime
   accepts them → add a small local type augmentation, pinned to the version.
 - Useful account methods: `registerWallet`, `createUtxos({ upTo, num, size, feeRate })`,
