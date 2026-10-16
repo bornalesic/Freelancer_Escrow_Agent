@@ -61,7 +61,7 @@ they are made. Release and refund come from a deterministic verifier and a pure 
 | Asset layer | **RGB** on Bitcoin | test USDT: issuance, invoices, transfers into and out of escrow |
 | Local AI | **QVAC** (`@qvac/sdk`, Qwen models, on-device) | plain-language agreement → verifiable conditions; streamed explanations |
 | Wallets (bonus) | **Tether WDK** + `@utexo/wdk-wallet-rgb` | self-custodial RGB wallets for client, freelancer and escrow agent |
-| Chain | Local Bitcoin regtest (bitcoind + electrs + RGB proxy, Docker) | private test network, instant blocks ‹UPDATE if we switch to signet› |
+| Chain | Local Bitcoin regtest (bitcoind + electrs + RGB proxy, Docker) | private test network, instant blocks ‹UPDATE if we switch to Mutinynet `signet`› |
 | App | TypeScript, Node.js 22, Fastify, React + Vite | escrow server, wallet servers, web UI |
 | Dev environment | Windows 11 + WSL2 Ubuntu; QVAC on native Windows (GPU via Vulkan) | — |
 
@@ -119,7 +119,14 @@ Other prior work (code, prototypes, designs, apps): ‹FILL IN — "none", or li
 ‹to be written during the hackathon›
 
 ### WDK features used
-‹to be written during the hackathon›
+‹to be written during the hackathon: list the real operations WDK performs (funding, release, refund,
+UTXO creation, asset issuance, signatures), since the bonus scales with how much real work WDK does›
+
+### Third-party tooling (declared)
+Organizers allow community forks and third-party tooling if declared in the pull request.
+- `@utexo/wdk-wallet-rgb` 2.0.3 (UTEXO's WDK adapter for RGB) and its `@utexo/rgb-sdk` /
+  `@utexo/rgb-lib` dependencies
+- ‹add: regtest Docker images used, any UTEXO fork (e.g. `rgb-lightning-node` for hold invoices)›
 
 ---
 
