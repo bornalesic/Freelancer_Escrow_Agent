@@ -21,7 +21,9 @@ The wallet library has no Windows binary, so **everything except `apps/ai` runs 
 
 - [ ] Confirm the Ubuntu shell is **WSL2**, not WSL1: in PowerShell run `wsl -l -v` → VERSION must be 2.
       If it shows 1: `wsl --set-version Ubuntu 2`.
-- [ ] Update WSL: `wsl --update`. Ubuntu 22.04 or 24.04 is fine.
+- [ ] Update WSL: `wsl --update`. Use **Ubuntu 24.04** (`wsl --install -d Ubuntu-24.04`). 22.04 does
+      **not** work: the RGB wallet's native binary needs glibc ≥ 2.38. Check inside Ubuntu with
+      `ldd --version` (24.04 shows 2.39).
 - [ ] Inside Ubuntu: install Node 22 (via `nvm`: `nvm install 22`), `git`, `build-essential`, `python3`.
 - [ ] Clone the repo **inside the WSL filesystem** (`~/code/rgb-escrow-agent`, not `/mnt/c/...`;
       it is much faster and avoids permission problems). Open it with `code .` from Ubuntu.
@@ -86,6 +88,12 @@ If another laptop has a stronger GPU than the GTX 1060, swap it in as the AI hos
       `createUtxos` → issue NIA `tUSDT` → invoice → transfer → mine → refresh both → settled.
       Note every surprise in `packages/wallet/CLAUDE.md` → "Learned the hard way".
 - [ ] Check whether `@tetherto/wdk` core can register `WalletManagerRgb` (gives a clearer WDK story).
+- [ ] Do **not** add an `overrides` entry for `@utexo/rgb-sdk` (it changes wallet derivation; see
+      `packages/wallet/CLAUDE.md`).
+- [ ] Only if we plan to try Mutinynet `signet`: create the four wallets at home, get each address
+      funded from `https://faucet.mutinynet.com` (1M sats per IP per 24 h; the venue will likely share
+      one IP), and run `createUtxos` before travelling. The organizers' RGB faucet USDT is on
+      `signetcustom` and is useless to us; we issue our own tUSDT.
 
 ## 4. WS3 — Escrow core
 

@@ -46,14 +46,29 @@ value in `rawStatus`.
 - Invoices are **single-use**; create a fresh one per payment.
 - A failed send often means "no free colorable UTXOs" — call `createUtxos()`.
 - `@utexo/wdk-wallet-rgb` 2.0.3 has native binaries for Linux and Apple Silicon only → on Windows,
-  run wallet processes in **WSL2**.
-- The released 2.0.3 docs list networks `mainnet | testnet | regtest`. Other names (`utexo`, `signet`)
-  appear in newer READMEs; confirm with UTEXO mentors before relying on them.
+  run wallet processes in **WSL2**. Its Linux binary (rgb-lib 0.3.0-beta.8) needs **glibc ≥ 2.38**:
+  Ubuntu **24.04** works, 22.04 does not.
+- Networks: the 2.0.3 types list `mainnet | testnet | regtest`, but the wrapper passes the name through
+  to rgb-sdk, which also accepts plain `signet` (confirmed by UTEXO). `signetcustom` is **not**
+  supported.
+- `signet` (recipient ids `sb:`) and `signetcustom` (`sbc:`) are **separate RGB networks** even on the
+  same chain (Mutinynet); an asset is bound to one at issuance. The organizers' faucet USDT and
+  KaleidoSwap wallets are on `signetcustom`, so our WDK wallets can't hold or exchange them.
+- Transfer stuck at `WAITING_CONFIRMATIONS` although the tx is confirmed: `refresh()` on **both**
+  sides; on signet, check the tx in the esplora and make sure the wallet's indexer has caught up.
 - Never commit mnemonics. Each laptop and each role has its own seed in `.env.local`.
 
 ## WDK in one sentence
 
 WDK is Tether's wallet toolkit: a common interface for wallet managers/accounts across chains.
-`@utexo/wdk-wallet-rgb` is the community WDK module for on-chain RGB; using it (and, if it works, the
-WDK core `@tetherto/wdk` registration on top) is what earns the WDK bonus. Make the WDK usage
-**visible** in the demo: the UI should say "Self-custodial wallet · Tether WDK".
+`@utexo/wdk-wallet-rgb` is the UTEXO-maintained WDK adapter for on-chain RGB (the organizers call it
+"the shortest path" between the two). WDK is optional and worth **0–5 bonus points, scaled by how much
+real work WDK does**; a token or pointless use scores lowest. So the bonus comes from WDK doing the
+actual escrow money movement (funding, release, refund, UTXOs, issuance), plus `@tetherto/wdk` core
+registration and WDK `sign()` if they work, not from a badge. Keep the "Self-custodial wallet ·
+Tether WDK" label, and list the real WDK operations in README → "WDK features used".
+
+## Forks and third-party tooling
+
+Allowed, as long as we **say what we use in the pull request**. Keep the list in README →
+"Third-party tooling" up to date (e.g. `@utexo/wdk-wallet-rgb`, any UTEXO fork).

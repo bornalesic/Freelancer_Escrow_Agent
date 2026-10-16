@@ -19,7 +19,11 @@ client. Every step is written to a **live decision log**, and QVAC explains each
   (every action logged and explained) and local (no cloud), but it is trusted.
 - **Stretch goal (do not start before the core demo works):** RGB over Lightning with hold invoices
   via `@utexo/wdk-rgb-lightning`, where funds are locked in an HTLC instead of held by the agent.
-  Ask UTEXO mentors whether hold invoices are supported before spending any time on it.
+  Hold (HODL) invoices exist in UTEXO's fork `UTEXO-Protocol/rgb-lightning-node` (tag
+  `v0.11.0-beta.3`: `payment_hash` on invoice, `claimhodlinvoice`, `cancelhodlinvoice`), not in
+  RGB-Tools' upstream node. Organizers allow forks if declared in the PR. RGB over Lightning is a
+  bonus, not a requirement: an on-chain RGB payment with 1 confirmation fully counts for
+  "Payments and checkout".
 
 ## Processes and ports
 
@@ -64,15 +68,24 @@ Configured by `RGB_NETWORK` + endpoints in `.env`, never hard-coded.
 1. **Primary: local regtest** (`scripts/regtest`). Instant blocks on demand, no faucet, no internet,
    fits the "nothing leaves the machine" pitch. The agent exposes `POST /dev/mine` so the demo can
    confirm transfers instantly.
-2. **Upgrade: public signet via UTEXO infrastructure**, only if a UTEXO mentor confirms the package
-   version and endpoints we should use (the `main` README mentions a `utexo` network; the released
-   2.0.3 docs list only mainnet/testnet/regtest).
+   Organizers confirmed there is no shared regtest: each team runs its own, and they recommend
+   regtest for testing because public test networks can have incompatibilities.
+2. **Optional upgrade: Mutinynet as plain `signet`.** The WDK adapter supports plain `signet` only
+   (confirmed by UTEXO). Use KaleidoSwap's endpoints: indexer `https://esplora.signet.kaleidoswap.com`,
+   proxy `rpcs://proxy.kaleidoswap.com/json-rpc`; fallback indexer `https://mutinynet.com/api`
+   (rate-limited, and the venue likely shares one public IP). Gains: transfers visible on
+   mutinynet.com. Costs: no `/dev/mine`, so we wait for real blocks; BTC from the faucet
+   (`https://faucet.mutinynet.com`, 1M sats per IP per 24 h, **fund before arriving**); don't poll in
+   tight loops (their maker shares the esplora). Only switch if regtest works end to end first.
 
 ## The asset
 
 We use a **test asset we issue ourselves** (NIA, ticker `tUSDT`, precision 6) from a "treasury"
-wallet during setup, then send some to the client. In the UI and pitch it is "USDT (test)". If mentors
-give us a real signet USDT asset id, only `ESCROW_ASSET_ID` in `.env` changes.
+wallet during setup, then send some to the client. In the UI and pitch it is "USDT (test)". This holds
+on signet too: **the organizers' faucet USDT cannot be used.** It is a NIA asset issued on
+`signetcustom` (recipient ids tagged `sbc:`), while WDK wallets run on plain `signet` (`sb:`). RGB
+treats these as separate networks on the same chain, and every asset is bound to one at issuance, so a
+WDK wallet cannot receive faucet USDT or pay KaleidoSwap wallets.
 
 ## Data and persistence
 
