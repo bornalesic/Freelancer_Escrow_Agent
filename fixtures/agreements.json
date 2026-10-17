@@ -1,0 +1,92 @@
+[
+  {
+    "id": "slugify-demo",
+    "title": "Slugify function",
+    "rawText": "Build a JavaScript function `slugify` that lowercases text, replaces spaces with dashes and strips anything that isn't a letter, number or dash. The included tests must pass. Also include a README. Pay 50 USDT. Deadline: 30 minutes.",
+    "amountDisplay": "50",
+    "assetTicker": "tUSDT",
+    "deadline": "2026-10-18T12:00:00Z",
+    "expect": { "kinds": ["tests_pass", "file_present"], "notKinds": ["file_hash"], "commands": ["npm test"], "pathPatterns": ["readme"] }
+  },
+  {
+    "id": "vague-logo",
+    "title": "Bakery logo",
+    "rawText": "Design a nice, modern logo for my bakery. It should look professional and use warm colours. Pay 30 USDT, deadline in 2 days.",
+    "amountDisplay": "30",
+    "assetTicker": "tUSDT",
+    "deadline": "2026-10-19T12:00:00Z",
+    "expect": { "notKinds": ["tests_pass", "file_hash"], "minClarifications": 1 }
+  },
+  {
+    "id": "vague-landing",
+    "title": "Landing page polish",
+    "rawText": "Make my landing page look nice and load fast. Good quality code please. 80 USDT, due Friday.",
+    "amountDisplay": "80",
+    "assetTicker": "tUSDT",
+    "deadline": "2026-10-23T17:00:00Z",
+    "expect": { "notKinds": ["tests_pass", "file_hash"], "minClarifications": 1 }
+  },
+  {
+    "id": "report-hash",
+    "title": "Final report",
+    "rawText": "Deliver the final report as report.pdf. Its SHA-256 must be 3a7bd3e2360a3d29eea436fcfb7e44c735d117c42d1c1835420b6b9942dd4f1b. 20 USDT, deadline tomorrow.",
+    "amountDisplay": "20",
+    "assetTicker": "tUSDT",
+    "deadline": "2026-10-18T18:00:00Z",
+    "expect": { "kinds": ["file_hash"], "notKinds": ["tests_pass"], "hashes": ["3a7bd3e2360a3d29eea436fcfb7e44c735d117c42d1c1835420b6b9942dd4f1b"] }
+  },
+  {
+    "id": "hash-without-value",
+    "title": "Dataset delivery",
+    "rawText": "Deliver the cleaned dataset as data.csv. We will check its SHA-256 hash against the one I send you later. 40 USDT within 3 days.",
+    "amountDisplay": "40",
+    "assetTicker": "tUSDT",
+    "deadline": "2026-10-20T12:00:00Z",
+    "expect": { "notKinds": ["file_hash", "tests_pass"], "minClarifications": 1 }
+  },
+  {
+    "id": "python-cli",
+    "title": "CSV to JSON CLI",
+    "rawText": "Write a Python CLI that converts CSV files to JSON. `pytest` must pass, and include a README.md and a LICENSE file. 60 USDT, 3 days.",
+    "amountDisplay": "60",
+    "assetTicker": "tUSDT",
+    "deadline": "2026-10-20T12:00:00Z",
+    "expect": { "kinds": ["tests_pass", "file_present"], "notKinds": ["file_hash"], "commands": ["pytest"], "pathPatterns": ["readme", "license"] }
+  },
+  {
+    "id": "bugfix-mixed",
+    "title": "Login bug fix",
+    "rawText": "Fix the login bug in our React app. All unit tests (npm test) must pass, and the UI should feel smooth. 100 USDT, deadline 24 hours.",
+    "amountDisplay": "100",
+    "assetTicker": "tUSDT",
+    "deadline": "2026-10-18T12:00:00Z",
+    "expect": { "kinds": ["tests_pass"], "notKinds": ["file_hash"], "commands": ["npm test"], "minClarifications": 1 }
+  },
+  {
+    "id": "docker-files",
+    "title": "Dockerize API",
+    "rawText": "Create a Dockerfile and a docker-compose.yml for our Node API, plus a short README. 45 USDT.",
+    "amountDisplay": "45",
+    "assetTicker": "tUSDT",
+    "deadline": "2026-10-19T12:00:00Z",
+    "expect": { "kinds": ["file_present"], "notKinds": ["file_hash", "tests_pass"], "pathPatterns": ["dockerfile", "docker-compose.yml", "readme"] }
+  },
+  {
+    "id": "two-hashes",
+    "title": "Logo files",
+    "rawText": "Deliver two files: logo.svg with SHA-256 9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08 and logo.png with SHA-256 60303ae22b998861bce3b28f33eec1be758a213c86c93c076dbe9f558c11c752. 25 USDT.",
+    "amountDisplay": "25",
+    "assetTicker": "tUSDT",
+    "deadline": "2026-10-19T12:00:00Z",
+    "expect": { "kinds": ["file_hash"], "notKinds": ["tests_pass"], "hashes": ["9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08", "60303ae22b998861bce3b28f33eec1be758a213c86c93c076dbe9f558c11c752"] }
+  },
+  {
+    "id": "rate-limiter",
+    "title": "Rate limiter library",
+    "rawText": "Implement a rate limiter library in TypeScript. The test suite (npm run test:ci) must pass within 120 seconds. The code should be clean and well documented. Include a README. 150 USDT, deadline one week.",
+    "amountDisplay": "150",
+    "assetTicker": "tUSDT",
+    "deadline": "2026-10-24T12:00:00Z",
+    "expect": { "kinds": ["tests_pass", "file_present"], "notKinds": ["file_hash"], "commands": ["npm run test:ci"], "pathPatterns": ["readme"], "minClarifications": 1 }
+  }
+]
