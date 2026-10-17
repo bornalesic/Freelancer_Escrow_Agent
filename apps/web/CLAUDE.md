@@ -56,5 +56,14 @@ for agent / party / AI (from `/health`), and a clear error banner instead of bla
    needed except the agreement — keep a "Paste demo agreement" button).
 6. Prepare `fixtures/demo-deliverable` zips and own `docs/DEMO_SCRIPT.md` rehearsals.
 
+## Running it
+- `npm run dev:web` → http://localhost:5173/{client,freelancer,agent} (listens on 0.0.0.0 for the LAN).
+- `?fixture=1` renders every view from `src/fixtures/snapshot.ts` with no agent running (`?fixture=0` turns
+  it off). Query overrides (`agent`, `party`, `fixture`) are remembered per tab in sessionStorage.
+- VITE_* vars are read from the **repo-root** `.env` / `.env.local` (`envDir: '../..'`).
+- `@escrow/shared` resolves to `src/shared-shim.ts` until `packages/shared/src/index.ts` exists, then to the
+  real package automatically (alias in `vite.config.ts`, `vitest.config.ts`, `tsconfig.json`). Delete the
+  shim and the aliases once shared is on main.
+
 ## Done when
 A non-technical person can follow the whole story on the projector without anyone explaining it.
