@@ -33,24 +33,28 @@ import {
 } from './rgb-mapping.ts'
 
 /** Size of each colorable UTXO `createUtxos` makes; what the rehearsal and the probe used. */
-const UTXO_SIZE_SAT = 1_000
+export const UTXO_SIZE_SAT = 1_000
 /** Invoice lifetime, the same hour as MockWallet's. rgb-sdk's own default is 2000 s. */
 const INVOICE_TTL_SEC = 60 * 60
 
-export interface RgbWdkWalletOptions {
-  role: Role
+/** What opening any RGB wallet here needs; RgbWdkWallet and the setup scripts' Treasury share it. */
+export interface RgbConnection {
   network: string
   /** Never logged. */
   mnemonic: string
-  /** This role's own directory. Never open one dataDir from two processes. */
+  /** This wallet's own directory. Never open one dataDir from two processes. */
   dataDir: string
   indexerUrl: string
   transportEndpoint: string
+  maxFeeSat: number
+}
+
+export interface RgbWdkWalletOptions extends RgbConnection {
+  role: Role
   feeRate: number
   /** Used for both sending and receiving: an invoice settles at the confirmations it was created with. */
   minConfirmations: number
   minFreeUtxos: number
-  maxFeeSat: number
   pollMs: number
 }
 
@@ -87,6 +91,26 @@ interface RgbManagerConfig {
 
 const sleep = (ms: number) => new Promise<void>((r) => { setTimeout(r, ms) })
 
+export const isValidMnemonic = (mnemonic: string): boolean => WalletManagerRgb.isValidSeedPhrase(mnemonic)
+export const newMnemonic = (): string => WalletManagerRgb.getRandomSeedPhrase()
+
+/**
+ * Open the WDK manager and its one account. The .d.ts config type has only `network` and `keys`, so
+ * the config the runtime really takes is cast; `T` is the caller's narrow view of the account.
+ */
+export async function openRgbAccount<T>(c: RgbConnection): Promise<T> {
+  mkdirSync(c.dataDir, { recursive: true })
+  const config: RgbManagerConfig = {
+    network: c.network,
+    dataDir: c.dataDir,
+    indexerUrl: c.indexerUrl,
+    transportEndpoint: c.transportEndpoint,
+    transferMaxFee: c.maxFeeSat,
+  }
+  const manager = new WalletManagerRgb(c.mnemonic, config as unknown as ConstructorParameters<typeof WalletManagerRgb>[1])
+  return (await manager.getAccount()) as unknown as T
+}
+
 export class RgbWdkWallet implements EscrowWallet {
   readonly #opts: RgbWdkWalletOptions
   #account: RgbAccount | undefined
@@ -95,7 +119,7 @@ export class RgbWdkWallet implements EscrowWallet {
   #queue: Promise<unknown> = Promise.resolve()
 
   constructor(opts: RgbWdkWalletOptions) {
-    if (!WalletManagerRgb.isValidSeedPhrase(opts.mnemonic)) {
+    if (!isValidMnemonic(opts.mnemonic)) {
       throw new WalletError(`the ${opts.role} mnemonic is not a valid BIP-39 seed phrase`)
     }
     this.#opts = opts
@@ -121,19 +145,7 @@ export class RgbWdkWallet implements EscrowWallet {
    */
   async init(): Promise<void> {
     await this.#run(async () => {
-      const o = this.#opts
-      if (this.#account === undefined) {
-        mkdirSync(o.dataDir, { recursive: true })
-        const config: RgbManagerConfig = {
-          network: o.network,
-          dataDir: o.dataDir,
-          indexerUrl: o.indexerUrl,
-          transportEndpoint: o.transportEndpoint,
-          transferMaxFee: o.maxFeeSat,
-        }
-        const manager = new WalletManagerRgb(o.mnemonic, config as unknown as ConstructorParameters<typeof WalletManagerRgb>[1])
-        this.#account = (await manager.getAccount()) as unknown as RgbAccount
-      }
+      if (this.#account === undefined) this.#account = await openRgbAccount<RgbAccount>(this.#opts)
       const account = this.#account
       if (this.#address === undefined) this.#address = (await account.registerWallet()).address
       account.syncWallet()
@@ -306,6 +318,11 @@ export class RgbWdkWallet implements EscrowWallet {
       // The registered address: getAddress() hands out a new one on every call.
       return { signature, address: this.#address ?? '' }
     })
+  }
+
+  /** Not part of EscrowWallet: for the setup scripts' "every wallet has >= MIN_FREE_UTXOS" check. */
+  async freeUtxoCount(): Promise<number> {
+    return this.#run(() => countFreeUtxos(this.#ready().listUnspents()))
   }
 
   /** Not part of EscrowWallet. `account.dispose()` only -- `manager.dispose()` throws "Invalid checksum". */

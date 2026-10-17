@@ -32,15 +32,21 @@ only — the native RGB binaries have no Windows build.
    - Serialize all calls through one in-process queue (rgb-lib does not like concurrent calls).
 3. **Factory** `createWallet({ role, mode })` reading env: `WALLET_MODE`, `RGB_NETWORK`, `RGB_DATA_DIR`,
    `RGB_INDEXER_URL`, `RGB_TRANSPORT_ENDPOINT`, `<ROLE>_MNEMONIC`.
-4. **Scripts** (in `scripts/`, run with `tsx`):
-   - `setup-demo.ts`: create/open treasury, agent, client, freelancer wallets (separate dataDirs) → mine
-     101 blocks to treasury → send BTC to each wallet → mine → `createUtxos` on each → treasury issues NIA
-     `tUSDT` (precision 6, supply 1,000,000) → send 100 to client → mine → refresh all → print asset id
-     and write `ESCROW_ASSET_ID` into `.env.local`.
-   - `reset-demo.ts`: stop-safe wipe of dataDirs + mock ledger, then `setup-demo`.
-   - Wallets on different laptops: run `setup-demo` on the stack laptop for the treasury, and a
-     `setup-role.ts --role client` on each party laptop that prints its BTC address + creates UTXOs
-     once funded. Keep it simple; document the exact sequence in `scripts/regtest/README.md`.
+4. **Scripts** (in `scripts/`, run with `tsx`; done, typecheck with `npx tsc --noEmit -p scripts`):
+   - `setup-demo.ts`: treasury + agent wallets (+ client and freelancer, unless `--client-address` /
+     `--freelancer-address` say they live on other laptops) → BTC to each from bitcoind's `miner`
+     wallet (`sendtoaddress`, **not** mined to the treasury: immature coinbase) → mine → `createUtxos` →
+     treasury issues NIA `TUSDT` (precision 6, supply 1,000,000) → 100 to the client (a remote client's
+     invoice comes from its party server, `CLIENT_PARTY_URL`) → mine until settled → write
+     `ESCROW_ASSET_ID` and new mnemonics into `.env.local` (0600, mnemonics never printed).
+   - `reset-demo.ts`: refuses while :4000/:4101/:4102 answer; wipes this laptop's wallets, their
+     mnemonics, `ESCROW_ASSET_ID` and the mock ledger, then runs `setup-demo` (fresh mnemonics: an old
+     mnemonic on a wiped dataDir gets its BTC back but not its RGB state).
+   - `setup-role.ts --role client|freelancer`: party laptop; new mnemonic if none, prints a BTC address
+     for `--<role>-address`, then (once funded) UTXOs and balances. The party server also creates its own
+     UTXOs once funded, so a re-run is optional. The tested sequence is in `scripts/regtest/README.md`.
+   - The issuer is `Treasury` (`src/treasury.ts`, imported lazily as `@escrow/wallet/treasury`); it
+     shares `openRgbAccount()` with `RgbWdkWallet`.
 
 ## Facts already verified (from docs, Oct 2026)
 - Package: `@utexo/wdk-wallet-rgb`, default export `WalletManagerRgb(seed, config)`; one account (index 0)
