@@ -59,11 +59,19 @@ for agent / party / AI (from `/health`), and a clear error banner instead of bla
 ## Running it
 - `npm run dev:web` → http://localhost:5173/{client,freelancer,agent} (listens on 0.0.0.0 for the LAN).
 - `?fixture=1` renders every view from `src/fixtures/snapshot.ts` with no agent running (`?fixture=0` turns
-  it off). Query overrides (`agent`, `party`, `fixture`) are remembered per tab in sessionStorage.
+  it off). Query overrides (`agent`, `party`, `client`, `freelancer`, `fixture`) are remembered per tab in
+  sessionStorage. `/agent` shows both parties' balances from `CLIENT_PARTY_URL` / `FREELANCER_PARTY_URL`
+  (exposed via `envPrefix`) or `?client=` / `?freelancer=`.
 - VITE_* vars are read from the **repo-root** `.env` / `.env.local` (`envDir: '../..'`).
 - `@escrow/shared` resolves to `src/shared-shim.ts` until `packages/shared/src/index.ts` exists, then to the
   real package automatically (alias in `vite.config.ts`, `vitest.config.ts`, `tsconfig.json`). Delete the
   shim and the aliases once shared is on main.
+
+## Learned the hard way
+- Emoji don't render in every environment (headless Linux shows empty boxes). Actor icons are inline SVG.
+- A smooth `scrollTo` fires `scroll` events mid-animation; the decision log only unpins auto-scroll when
+  the viewer scrolls *up*, and follows content growth with a ResizeObserver (covers streamed tokens).
+- `vite` uses `strictPort`: if 5173 is "in use", an old dev server is still running (`pgrep -af vite`).
 
 ## Done when
 A non-technical person can follow the whole story on the projector without anyone explaining it.

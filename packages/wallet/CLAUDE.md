@@ -60,6 +60,13 @@ only — the native RGB binaries have no Windows build.
 (fill in during setup and the hackathon: exact status strings, which calls are sync vs async,
 how long a refresh takes, what errors look like when UTXOs run out, ...)
 
+- `@utexo/wdk-wallet-rgb@2.0.3` on Node 22 / Ubuntu 24.04 WSL2: native addon
+  (`@utexo/rgb-lib-linux-x64`) loads; `new WalletManagerRgb(mnemonic, { network: 'regtest', dataDir })`
+  + `await getAccount()` + `getAddress()` works offline (returns `bcrt1p...`), no indexer needed.
+- **`manager.dispose()` throws `Error: Invalid checksum`** after `getAccount()`: it blanks `xpriv` before
+  `super.dispose()` disposes the account, whose `keyPair` getter then decodes the empty xpriv. Call
+  `account.dispose()` only (or wrap `manager.dispose()` in try/catch).
+
 ## Tests
 - `MockWallet`: vitest — pay between two instances sharing a ledger file; pending → settled timing.
 - `RgbWdkWallet`: an opt-in integration test (`RGB_IT=1 npm test -w packages/wallet`) against regtest

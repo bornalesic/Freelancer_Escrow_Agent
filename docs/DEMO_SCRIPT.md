@@ -15,8 +15,8 @@ own machine, pays in USDT on Bitcoin, and checks the work itself."
 
 **0:20 — Agreement in plain language (40 s).** Client types:
 > "Build a JavaScript function `slugify` that lowercases text, replaces spaces with dashes and strips
-> anything that isn't a letter, number or dash. The included tests must pass. Pay 50 USDT. Deadline:
-> 30 minutes."
+> anything that isn't a letter, number or dash. The included tests must pass. Also include a README.
+> Pay 50 USDT. Deadline: 30 minutes."
 
 QVAC turns it into checks on screen: *Tests pass (`npm test`)*, *`README.md` present*. The log
 explains in one sentence what each check means.

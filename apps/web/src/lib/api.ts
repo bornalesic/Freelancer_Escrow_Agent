@@ -54,6 +54,9 @@ export const partyApi = {
   sign: (message: string) => party<{ signature: string; address: string }>('/wallet/sign', { message }),
 };
 
+/** GET /wallet on any party server (the projector reads both parties' balances). */
+export const partyWalletAt = (baseUrl: string) => requestJson<PartyWallet>(baseUrl, '/wallet', { timeoutMs: 3_000 });
+
 export function findBalance(wallet: PartyWallet | undefined, assetId: string | undefined): AssetBalance | undefined {
   return assetId ? wallet?.assets.find((a) => a.assetId === assetId) : undefined;
 }

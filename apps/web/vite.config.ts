@@ -13,6 +13,8 @@ export default defineConfig({
   plugins: [react(), tailwindcss()],
   // Read VITE_* from the repo-root .env / .env.local, like every other process.
   envDir: '../..',
+  // The projector shows both parties' balances, using the URLs already in .env.example.
+  envPrefix: ['VITE_', 'CLIENT_PARTY_URL', 'FREELANCER_PARTY_URL'],
   resolve: {
     alias: { '@escrow/shared': existsSync(realShared) ? realShared : shimShared },
   },

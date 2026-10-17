@@ -1,6 +1,6 @@
 // Pure state for everything the agent streams over its WebSocket. The UI renders only from this.
 // `snapshot` replaces one escrow and its log; the other messages patch it.
-import type { Escrow, LogEvent, WsMessage } from '@escrow/shared';
+import type { Escrow, EscrowState, LogEvent, WsMessage } from '@escrow/shared';
 
 export interface EscrowView {
   escrow: Escrow;
@@ -54,3 +54,6 @@ export function pickEscrow(state: StreamState, escrowId?: string | null): Escrow
   if (escrowId) return state[escrowId];
   return Object.values(state).sort((a, b) => b.escrow.updatedAt.localeCompare(a.escrow.updatedAt))[0];
 }
+
+/** Final states: nothing will happen any more, so no deadline to count down to. */
+export const isClosed = (s: EscrowState) => s === 'RELEASED' || s === 'REFUNDED' || s === 'CANCELLED';

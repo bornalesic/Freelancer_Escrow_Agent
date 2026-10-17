@@ -1,0 +1,160 @@
+{
+  "$comment": "Eval set for apps/ai /parse (WS2). Each case builds a ParseRequest: deadline = now + deadlineMinutes. `expect.conditions` are partial matches: every listed condition must appear (match on kind + the listed fields; description/id/timeoutSec are free). `expect.extraConditionsAllowed` false = no other conditions. `expect.minClarifications` = at least this many clarifications.",
+  "cases": [
+    {
+      "id": "slugify-demo",
+      "title": "slugify function",
+      "rawText": "Build a JavaScript function `slugify` that lowercases text, replaces spaces with dashes and strips anything that isn't a letter, number or dash. The included tests must pass. Also include a README. Pay 50 USDT. Deadline: 30 minutes.",
+      "amountDisplay": "50",
+      "assetTicker": "tUSDT",
+      "deadlineMinutes": 30,
+      "expect": {
+        "conditions": [
+          { "kind": "tests_pass", "command": "npm test" },
+          { "kind": "file_present", "pathPattern": "README.md" }
+        ],
+        "extraConditionsAllowed": false,
+        "minClarifications": 0
+      }
+    },
+    {
+      "id": "tests-only",
+      "title": "Fix the date parser",
+      "rawText": "Fix the bug in parseDate so that the existing test suite passes. Run it with npm test. 20 USDT, due in one hour.",
+      "amountDisplay": "20",
+      "assetTicker": "tUSDT",
+      "deadlineMinutes": 60,
+      "expect": {
+        "conditions": [{ "kind": "tests_pass", "command": "npm test" }],
+        "extraConditionsAllowed": false,
+        "minClarifications": 0
+      }
+    },
+    {
+      "id": "custom-test-command",
+      "title": "Python CSV cleaner",
+      "rawText": "Write a Python script clean.py that removes empty rows from a CSV. Done when `python -m pytest` passes. Pay 35 USDT within 2 hours.",
+      "amountDisplay": "35",
+      "assetTicker": "tUSDT",
+      "deadlineMinutes": 120,
+      "expect": {
+        "conditions": [
+          { "kind": "tests_pass", "command": "python -m pytest" },
+          { "kind": "file_present", "pathPattern": "clean.py" }
+        ],
+        "extraConditionsAllowed": true,
+        "minClarifications": 0
+      }
+    },
+    {
+      "id": "exact-file-hash",
+      "title": "Deliver the signed contract PDF",
+      "rawText": "Send me the final contract as contract.pdf. It must be exactly the version we agreed on, sha256 9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08. 10 USDT, deadline 15 minutes.",
+      "amountDisplay": "10",
+      "assetTicker": "tUSDT",
+      "deadlineMinutes": 15,
+      "expect": {
+        "conditions": [
+          {
+            "kind": "file_hash",
+            "fileName": "contract.pdf",
+            "sha256": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08"
+          }
+        ],
+        "extraConditionsAllowed": true,
+        "minClarifications": 0
+      }
+    },
+    {
+      "id": "several-files-present",
+      "title": "Landing page",
+      "rawText": "Build a static landing page. The delivery must contain index.html, styles.css and a LICENSE file. 40 USDT, due in 3 hours.",
+      "amountDisplay": "40",
+      "assetTicker": "tUSDT",
+      "deadlineMinutes": 180,
+      "expect": {
+        "conditions": [
+          { "kind": "file_present", "pathPattern": "index.html" },
+          { "kind": "file_present", "pathPattern": "styles.css" },
+          { "kind": "file_present", "pathPattern": "LICENSE" }
+        ],
+        "extraConditionsAllowed": false,
+        "minClarifications": 0
+      }
+    },
+    {
+      "id": "tests-plus-vague-part",
+      "title": "Todo API",
+      "rawText": "Build a small REST API for todos in Node. npm test must pass and include a README. The code should also be clean and well organised. 60 USDT, deadline 45 minutes.",
+      "amountDisplay": "60",
+      "assetTicker": "tUSDT",
+      "deadlineMinutes": 45,
+      "expect": {
+        "conditions": [
+          { "kind": "tests_pass", "command": "npm test" },
+          { "kind": "file_present", "pathPattern": "README.md" }
+        ],
+        "extraConditionsAllowed": false,
+        "minClarifications": 1
+      }
+    },
+    {
+      "id": "glob-pattern",
+      "title": "Unit tests for the parser",
+      "rawText": "Add unit tests for the parser module. Put them in a tests folder (any .test.js file under tests/) and make sure npm test passes. 25 USDT in 1 hour.",
+      "amountDisplay": "25",
+      "assetTicker": "tUSDT",
+      "deadlineMinutes": 60,
+      "expect": {
+        "conditions": [
+          { "kind": "tests_pass", "command": "npm test" },
+          { "kind": "file_present", "pathPattern": "tests/**/*.test.js" }
+        ],
+        "extraConditionsAllowed": false,
+        "minClarifications": 0
+      }
+    },
+    {
+      "id": "informal-wording",
+      "title": "Fizzbuzz",
+      "rawText": "hey can u write fizzbuzz in js?? tests r included, just make them go green (npm test). oh and a readme pls. ill pay 5 usdt, need it in 20 min",
+      "amountDisplay": "5",
+      "assetTicker": "tUSDT",
+      "deadlineMinutes": 20,
+      "expect": {
+        "conditions": [
+          { "kind": "tests_pass", "command": "npm test" },
+          { "kind": "file_present", "pathPattern": "README.md" }
+        ],
+        "extraConditionsAllowed": false,
+        "minClarifications": 0
+      }
+    },
+    {
+      "id": "vague-design",
+      "title": "Make my website look nice",
+      "rawText": "Make my website look nice and modern. I want it to feel professional. 30 USDT, by tomorrow.",
+      "amountDisplay": "30",
+      "assetTicker": "tUSDT",
+      "deadlineMinutes": 1440,
+      "expect": {
+        "conditions": [],
+        "extraConditionsAllowed": false,
+        "minClarifications": 1
+      }
+    },
+    {
+      "id": "vague-quality",
+      "title": "Improve performance",
+      "rawText": "Make the app faster and fix whatever bugs you find. Pay 45 USDT when I'm happy with it. Deadline 2 hours.",
+      "amountDisplay": "45",
+      "assetTicker": "tUSDT",
+      "deadlineMinutes": 120,
+      "expect": {
+        "conditions": [],
+        "extraConditionsAllowed": false,
+        "minClarifications": 1
+      }
+    }
+  ]
+}
