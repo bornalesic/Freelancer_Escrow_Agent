@@ -1,0 +1,30 @@
+# Regtest stack for the escrow demo.
+# Trimmed from RGB-Tools/rgb-lib `tests/compose.yaml` (master, Oct 2026), keeping only the three
+# services docs/SETUP.md and scripts/regtest/README.md need. Image versions are pinned on purpose:
+# `docker compose pull` them at home, the venue Wi-Fi will not cooperate.
+services:
+  bitcoind:
+    image: registry.gitlab.com/hashbeam/docker/bitcoind:30.2
+    # -fallbackfee is required on regtest (no fee estimation data).
+    # rpcbind/rpcallowip let the agent server reach JSON-RPC from outside the compose network.
+    command: >
+      -fallbackfee=0.0002
+      -rpcbind=0.0.0.0
+      -rpcallowip=0.0.0.0/0
+    ports:
+      - 18443:18443        # JSON-RPC, used by the agent's /dev/mine
+    restart: unless-stopped
+
+  electrs:
+    image: registry.gitlab.com/hashbeam/docker/electrs:0.11.0
+    ports:
+      - 50001:50001        # RGB_INDEXER_URL=tcp://<agent-LAN-IP>:50001
+    depends_on:
+      - bitcoind
+    restart: unless-stopped
+
+  proxy:
+    image: ghcr.io/rgb-tools/rgb-proxy-server:0.3.0
+    ports:
+      - 3000:3000          # RGB_TRANSPORT_ENDPOINT=rpc://<agent-LAN-IP>:3000/json-rpc
+    restart: unless-stopped
