@@ -1,13 +1,14 @@
-import { formatAmount, type Condition, type Escrow, type LogEvent, type VerificationResult } from '@escrow/shared';
+import { formatAmount, isAutomaticCondition, type Condition, type Delivery, type Escrow, type LogEvent, type VerificationResult } from '@escrow/shared';
 
 /**
  * The only facts an explanation may use. Built deterministically from the event + escrow, so both the
  * templates and the LLM prompt see exactly the same data (and the LLM never sees invoices or raw logs).
  *
  * `event.data` keys we understand (all optional; WS3 decides what to send):
- *   role, amount (base units), n / fileName, conditionId, passed, evidence, result (VerificationResult),
- *   results (VerificationResult[]), failedTests (string[]), decision (Decision) or action + reason,
- *   failed (condition ids), txid, message / error.
+ *   role, amount (base units), n / deliveryN / fileName, conditionId, passed, evidence,
+ *   result (VerificationResult), results (VerificationResult[]), failedTests (string[]),
+ *   decision (Decision) or action + reason, failed / pending (condition ids), reason (dispute), txid,
+ *   message / error.
  */
 export interface EventFacts {
   step: string;                 // LogEventType
@@ -18,12 +19,15 @@ export interface EventFacts {
   deadline?: string;            // only where the deadline matters (creation, decisions)
   role?: string;                // who acted (client / freelancer)
   delivery?: { n: number; fileName?: string };
-  conditions?: string[];        // terms.proposed: condition descriptions
+  conditions?: string[];        // terms.proposed: automatic condition descriptions
+  clientReview?: string[];      // terms.proposed: what the client will judge
   clarifications?: string[];
   condition?: { description: string };
   result?: { passed: boolean; exitCode?: number; failingTests?: string[]; problem?: string };
   checks?: { passed: number; total: number; failed: string[] };
-  decision?: { action: string; reason?: string };
+  decision?: { action: string; reason?: string; pending?: number; after?: 'approval' | 'dispute' | 'no_answer' };
+  review?: { looksMet: number; looksUnmet: number; unsure: number };
+  dispute?: { reason?: string };
   txid?: string;
   error?: string;
 }
@@ -33,6 +37,7 @@ type Data = Record<string, unknown>;
 const str = (v: unknown): string | undefined => (typeof v === 'string' && v.trim() ? v.trim() : undefined);
 const num = (v: unknown): number | undefined => (typeof v === 'number' && Number.isFinite(v) ? v : undefined);
 const obj = (v: unknown): Data | undefined => (v && typeof v === 'object' && !Array.isArray(v) ? (v as Data) : undefined);
+const ids = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : []);
 
 /** Test names that failed, parsed from common runner output (node --test TAP/spec, jest, mocha, pytest). */
 export function failingTestNames(stdout: string | undefined, max = 3): string[] {
@@ -54,10 +59,6 @@ export function failingTestNames(stdout: string | undefined, max = 3): string[] 
   return names.slice(0, max);
 }
 
-function shortCondition(c: Condition): { description: string } {
-  return { description: c.description };
-}
-
 function resultFacts(r: Partial<VerificationResult> & { evidence?: Data }, data: Data): EventFacts['result'] {
   const evidence = obj(r.evidence) ?? {};
   const failingTests = Array.isArray(data.failedTests)
@@ -75,6 +76,7 @@ const MONEY_EVENTS = new Set(['funding.invoice_created', 'funding.payment_seen',
   'payout.sent', 'payout.settled', 'refund.sent', 'refund.settled']);
 const AMOUNT_EVENTS = new Set([...MONEY_EVENTS, 'escrow.created', 'terms.agreed', 'decision.made']);
 const DEADLINE_EVENTS = new Set(['escrow.created', 'decision.made']);
+const DELIVERY_EVENTS = /^(delivery|verify|review)\./;
 
 const MONEY_PHRASES: Record<string, string> = {
   'funding.invoice_created': 'the client can now pay this amount into escrow',
@@ -90,7 +92,19 @@ const DECISION_MONEY: Record<string, string> = {
   refund: 'to be refunded to the client',
   retry: 'stays locked in escrow',
   wait: 'stays locked in escrow',
+  await_approval: 'stays locked in escrow while the client reviews',
 };
+
+/** Why a decision happened, read from the latest delivery (approval / dispute / review window ran out). */
+function decisionContext(escrow: Escrow, failed: string[]): 'approval' | 'dispute' | 'no_answer' | undefined {
+  const last: Delivery | undefined = escrow.deliveries.at(-1);
+  if (last?.approval?.decision === 'approve') return 'approval';
+  if (last?.approval?.decision === 'dispute') return 'dispute';
+  const reviewIds = new Set(escrow.conditions.filter((c) => !isAutomaticCondition(c)).map((c) => c.id));
+  if (failed.some((id) => reviewIds.has(id))) return 'dispute';
+  if (last?.reviewDueAt && !last.approval) return 'no_answer';
+  return undefined;
+}
 
 export function buildFacts(event: LogEvent, escrow: Escrow): EventFacts {
   const data: Data = event.data ?? {};
@@ -103,31 +117,31 @@ export function buildFacts(event: LogEvent, escrow: Escrow): EventFacts {
   const role = str(data.role) ?? (event.actor === 'client' || event.actor === 'freelancer' ? event.actor : undefined);
   if (role && ['terms.accepted', 'escrow.cancelled', 'delivery.received'].includes(event.type)) facts.role = role;
 
-  const lastDelivery = escrow.deliveries.at(-1);
-  if (event.type.startsWith('delivery.') || event.type.startsWith('verify.')) {
-    const n = num(data.n) ?? lastDelivery?.n;
-    if (n !== undefined) {
-      facts.delivery = { n, fileName: str(data.fileName) ?? (lastDelivery?.n === n ? lastDelivery.fileName : undefined) };
-    }
+  const n = num(data.n) ?? num(data.deliveryN) ?? escrow.deliveries.at(-1)?.n;
+  const delivery = n !== undefined ? escrow.deliveries.find((d) => d.n === n) : undefined;
+  if (DELIVERY_EVENTS.test(event.type) && n !== undefined) {
+    facts.delivery = { n, fileName: str(data.fileName) ?? delivery?.fileName };
   }
 
   if (event.type === 'terms.proposed') {
-    facts.conditions = escrow.conditions.map((c) => c.description);
+    facts.conditions = escrow.conditions.filter(isAutomaticCondition).map((c) => c.description);
+    const review = escrow.conditions.filter((c) => !isAutomaticCondition(c)).map((c) => c.description);
+    if (review.length) facts.clientReview = review;
     if (escrow.clarifications?.length) facts.clarifications = escrow.clarifications;
   }
 
   const conditionId = str(data.conditionId) ?? str(obj(data.result)?.conditionId);
-  const condition = conditionId ? escrow.conditions.find((c) => c.id === conditionId) : undefined;
-  if (condition) facts.condition = shortCondition(condition);
+  const condition: Condition | undefined = conditionId ? escrow.conditions.find((c) => c.id === conditionId) : undefined;
+  if (condition) facts.condition = { description: condition.description };
 
   if (event.type === 'verify.condition_result') {
-    const stored = conditionId ? lastDelivery?.results?.find((r) => r.conditionId === conditionId) : undefined;
+    const stored = conditionId ? delivery?.results?.find((r) => r.conditionId === conditionId) : undefined;
     const r = obj(data.result) ?? (typeof data.passed === 'boolean' ? data : undefined) ?? stored;
     if (r) facts.result = resultFacts(r as Partial<VerificationResult>, data);
   }
 
   if (event.type === 'verify.finished') {
-    const results = (Array.isArray(data.results) ? data.results : lastDelivery?.results ?? []) as VerificationResult[];
+    const results = (Array.isArray(data.results) ? data.results : delivery?.results ?? []) as VerificationResult[];
     if (results.length) {
       const failed = results.filter((r) => !r.passed).map((r) => {
         const c = escrow.conditions.find((x) => x.id === r.conditionId);
@@ -142,9 +156,28 @@ export function buildFacts(event: LogEvent, escrow: Escrow): EventFacts {
   if (event.type === 'decision.made') {
     const d = obj(data.decision) ?? data;
     const action = str(d.action);
-    if (action) facts.decision = { action, reason: str(d.reason) };
-    if (action && DECISION_MONEY[action]) facts.money = DECISION_MONEY[action];
+    if (action) {
+      const pending = ids(d.pending);
+      facts.decision = {
+        action,
+        reason: str(d.reason),
+        ...(action === 'await_approval' ? { pending: pending.length || escrow.conditions.filter((c) => !isAutomaticCondition(c)).length } : {}),
+        ...(action !== 'await_approval' && action !== 'wait' ? { after: decisionContext(escrow, ids(d.failed)) } : {}),
+      };
+      if (DECISION_MONEY[action]) facts.money = DECISION_MONEY[action];
+    }
   }
+
+  if (event.type === 'review.report_ready' && delivery?.review) {
+    const items = delivery.review.items;
+    facts.review = {
+      looksMet: items.filter((i) => i.opinion === 'looks_met').length,
+      looksUnmet: items.filter((i) => i.opinion === 'looks_unmet').length,
+      unsure: items.filter((i) => i.opinion === 'unsure').length,
+    };
+  }
+
+  if (event.type === 'review.disputed') facts.dispute = { reason: str(data.reason) ?? delivery?.approval?.reason };
 
   if (MONEY_EVENTS.has(event.type)) {
     const txid = str(data.txid);

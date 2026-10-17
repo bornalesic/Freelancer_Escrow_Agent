@@ -1,7 +1,8 @@
 import cors from '@fastify/cors';
 import {
-  AI_ROUTES, ExplainRequestSchema, ParseRequestSchema,
-  type AiHealth, type ExplainRequest, type ExplainStreamChunk, type ExplainSyncResult, type ParseRequest, type ParseResult,
+  AI_ROUTES, ExplainRequestSchema, ParseRequestSchema, ReviewRequestSchema,
+  type AiHealth, type AiReview, type ExplainRequest, type ExplainStreamChunk, type ExplainSyncResult,
+  type ParseRequest, type ParseResult, type ReviewRequest,
 } from '@escrow/shared';
 import Fastify, { type FastifyInstance, type FastifyReply } from 'fastify';
 import type { z } from 'zod';
@@ -11,6 +12,8 @@ export interface AiHandlers {
   parse(req: ParseRequest): Promise<ParseResult>;
   /** Streams deltas via onDelta; the resolved text is authoritative. Must not throw. */
   explain(req: ExplainRequest, onDelta?: (text: string) => void, signal?: AbortSignal): Promise<ExplainSyncResult>;
+  /** Advisory opinion on each client_review condition. Must not throw. */
+  review(req: ReviewRequest): Promise<AiReview>;
 }
 
 function badRequest(reply: FastifyReply, error: z.ZodError) {
@@ -38,6 +41,15 @@ export async function buildServer(h: AiHandlers, log: (msg: string) => void = ()
     const body = ParseRequestSchema.safeParse(request.body);
     if (!body.success) return badRequest(reply, body.error);
     return h.parse(body.data);
+  });
+
+  app.post(AI_ROUTES.review, async (request, reply) => {
+    const body = ReviewRequestSchema.safeParse(request.body);
+    if (!body.success) return badRequest(reply, body.error);
+    if (!body.data.escrow.deliveries.some((d) => d.n === body.data.deliveryN)) {
+      return reply.code(400).send({ error: `escrow has no delivery #${body.data.deliveryN}`, details: null });
+    }
+    return h.review(body.data);
   });
 
   app.post(AI_ROUTES.explainSync, async (request, reply) => {

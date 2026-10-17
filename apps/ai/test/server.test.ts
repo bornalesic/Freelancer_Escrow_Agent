@@ -1,15 +1,15 @@
-import { AiHealthSchema, ExplainSyncResultSchema, ParseResultSchema } from '@escrow/shared';
+import { AiHealthSchema, AiReviewSchema, ExplainSyncResultSchema, ParseResultSchema } from '@escrow/shared';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import { mockHandlers } from '../src/mock.ts';
 import { buildServer } from '../src/server.ts';
-import { escrow, event, slugify } from './fixtures.ts';
+import { escrow, event, landingEscrow, slugify } from './fixtures.ts';
 
 let app: FastifyInstance;
 beforeAll(async () => { app = await buildServer(mockHandlers()); });
 afterAll(async () => { await app.close(); });
 
-const { id: _id, expect: _expect, ...parseBody } = slugify;
+const parseBody = slugify;
 
 describe('server (mock mode)', () => {
   it('GET /health', async () => {
@@ -51,5 +51,22 @@ describe('server (mock mode)', () => {
   it('POST /explain rejects a bad body with 400', async () => {
     const res = await app.inject({ method: 'POST', url: '/explain', payload: { event: {} } });
     expect(res.statusCode).toBe(400);
+  });
+
+  it('POST /review (mock) mirrors the demo: delivery #1 looks unmet, later ones look met', async () => {
+    const files = [{ path: 'index.html', sizeBytes: 10, excerpt: '<html></html>' }];
+    const v1 = await app.inject({ method: 'POST', url: '/review', payload: { escrow: landingEscrow(), deliveryN: 1, files } });
+    expect(v1.statusCode).toBe(200);
+    expect(AiReviewSchema.parse(v1.json()).items).toEqual([expect.objectContaining({ conditionId: 'c3', opinion: 'looks_unmet' })]);
+
+    const two = landingEscrow({ deliveries: [...landingEscrow().deliveries, { n: 2, fileName: 'landing-v2.zip', sha256: 'c'.repeat(64), sizeBytes: 2048, at: '2026-10-17T12:10:00Z' }] });
+    const v2 = await app.inject({ method: 'POST', url: '/review', payload: { escrow: two, deliveryN: 2, files } });
+    expect(AiReviewSchema.parse(v2.json()).items[0]).toMatchObject({ opinion: 'looks_met' });
+  });
+
+  it('POST /review rejects an unknown delivery number with 400', async () => {
+    const res = await app.inject({ method: 'POST', url: '/review', payload: { escrow: landingEscrow(), deliveryN: 7, files: [] } });
+    expect(res.statusCode).toBe(400);
+    expect(res.json()).toMatchObject({ error: expect.stringContaining('#7') });
   });
 });

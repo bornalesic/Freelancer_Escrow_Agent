@@ -168,8 +168,11 @@ Eval (parse-v2 + guards, 2B): **10/10** from the model. Explanations (explain-v3
 Tasks 1–6 done: mock mode, server + health + warm-up, `/parse` (json_schema + guards + retry + fallback, 90 s
 budget), `/explain` SSE + `/explain/sync` (template on timeout/guard), templates, eval ≥ 8/10. Next: run with
 WS3's real agent (Integration 1), confirm the `event.data` keys above, then polish wording (H16–H20).
-Tasks 7–9 (client review, branch `New_Rules`) are planned, not started; they wait for the contract change
-in `packages/shared`.
+Client review (tasks 7–9) implemented on WS3's contract: parse-v3 (`review` quotes → `client_review`,
+`unclear` quotes → clarifications), `POST /review` (fenced excerpts, injection guard, file/colour grounding,
+template fallback, mock mirrors the demo), templates for the `review.*` events, `await_approval` and
+`terms.reparse_requested`. `fixtures/agreements.json` is WS4's format, 17 cases; the fallback parser alone
+passes all 17. `dinamo-shop-placeholder` is a stand-in until the real Dinamo agreement text is added.
 
 ## Learned the hard way
 - Qwen3.5 structured output needs `reasoning_budget: 0`; `/no_think` is not enough (see API facts).
@@ -193,3 +196,16 @@ in `packages/shared`.
   `isGrounded` then rejects unknown numbers, money words not in the facts, a "missed deadline" outside
   refunds, and pass/fail polarity flips. Facts only carry the amount/deadline on steps about them.
 - Killing `npm run dev:ai` from a tool did not leave orphans (port 4300 and the `bare` worker were freed).
+- **Feature lists used to return no conditions.** "Create a web shop… It has to have a catalog, a cart and a
+  checkout" matched no rule, so the escrow had nothing to check. The fallback now turns required-feature
+  clauses into `client_review`, and as a last resort the main "Build/Create…" sentence; parse-v3 tells the
+  model the same. An escrow should never come back with zero conditions when there is a deliverable.
+- **Regex traps:** `clean.py` matched the subjective word "clean" (file names are now removed before the
+  wording checks), and plain-text `make <word>` read "make sure npm test passes" as the command `make sure`
+  (plain-text commands are now only npm/pnpm/yarn/pytest/cargo/go test; other tools need backticks).
+- **2B invents concrete files from globs and drops hash file names** (eval: `tests/test.js` next to
+  `tests/**/*.test.js`; `contract.*pdf` + a hash without `fileName`). Either can fail correct work. Guards: a
+  concrete file name must appear whole in the agreement; a fuzzy glob matching exactly one named file becomes
+  that file; a hash's missing or invented `fileName` is taken from the file named next to the hash.
+- **Don't run `npm install` while `npm run dev:ai` is running** on Windows: npm re-extracts `bare.exe` and
+  the llama.cpp addon that the service has loaded, which fails and can crash the service.
