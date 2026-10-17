@@ -1,0 +1,10 @@
+{
+  "name": "slugify",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "main": "slugify.js",
+  "scripts": {
+    "test": "node --test --test-reporter=spec"
+  }
+}
