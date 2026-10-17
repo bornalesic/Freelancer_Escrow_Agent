@@ -1,15 +1,9 @@
 {
+  "extends": "../../tsconfig.base.json",
   "compilerOptions": {
-    "target": "ES2023",
-    "module": "NodeNext",
-    "moduleResolution": "NodeNext",
-    "strict": true,
-    "noEmit": true,
-    "allowImportingTsExtensions": true,
-    "esModuleInterop": true,
-    "skipLibCheck": true,
-    "resolveJsonModule": true,
-    "types": ["node"]
+    // Browser-safe package: DOM lib for TextEncoder/crypto, no Node types.
+    "lib": ["ES2023", "DOM"],
+    "types": []
   },
-  "include": ["src"]
+  "include": ["src", "test"]
 }

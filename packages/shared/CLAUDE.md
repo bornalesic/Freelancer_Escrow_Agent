@@ -5,7 +5,8 @@ Owner: **WS3** (gatekeeper). Built by the whole team together at H0, in ~45 minu
 ## Purpose
 The single source of truth for everything that crosses a process boundary: domain types, zod schemas,
 log event types, WebSocket messages, HTTP route constants, the wallet interface, and small pure helpers.
-No runtime dependencies besides `zod`. No Node-only APIs except in `hash.ts` (uses `node:crypto`).
+No runtime dependencies besides `zod`. **No Node-only APIs at all**, so `apps/web` can import it:
+`hash.ts` has a small pure-JS sha256 (tested against `node:crypto`), so the UI can recompute `termsHash`.
 
 ## Build it from `docs/CONTRACTS.md`
 Create these files, translating the spec 1:1. Every type gets a zod schema; derive the TS type with
@@ -38,8 +39,11 @@ src/index.ts       re-export everything
   merged by WS3, announced in chat, and `docs/CONTRACTS.md` updated in the same commit.
 - Keep this package boring: no classes with behaviour, no I/O, no environment variables.
 
-## Client review (branch `New_Rules`, planned)
-One contract change, merged by WS3, adding everything in `docs/CONTRACTS.md` marked for client review:
+## Client review (landed on `ws/agent`)
+Done: `client_review` (+ `isAutomaticCondition`), `AWAITING_APPROVAL`, `Approval`, `AiReview`, `await_approval`,
+`review.*` events, `ReviewRequest`, `DeliveryFile`, `ApproveRequestSchema`, `CreateEscrowResponseSchema`,
+`AGENT_ROUTES.approve / deliveryFiles / deliveryFile`, `AI_ROUTES.review`. Originally specified as one
+contract change, merged by WS3, adding everything in `docs/CONTRACTS.md` marked for client review:
 the `client_review` condition kind (also in `CONDITION_KINDS`), state `AWAITING_APPROVAL`, `Delivery`
 fields `reviewDueAt` / `review` / `approval`, `Approval`, `AiReview`, the `await_approval` decision,
 the four `review.*` event types, `ReviewRequest`, `ApproveRequest`, the `POST /escrows` response

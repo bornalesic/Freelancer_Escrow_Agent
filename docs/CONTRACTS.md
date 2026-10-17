@@ -140,7 +140,7 @@ client, including the freelancer.
 export type Actor = 'client' | 'freelancer' | 'agent' | 'ai' | 'verifier' | 'wallet' | 'system';
 
 export type LogEventType =
-  | 'escrow.created' | 'terms.proposed' | 'terms.accepted' | 'terms.agreed'
+  | 'escrow.created' | 'terms.proposed' | 'terms.reparse_requested' | 'terms.accepted' | 'terms.agreed'
   | 'funding.invoice_created' | 'funding.payment_seen' | 'funding.settled'
   | 'delivery.received' | 'verify.started' | 'verify.condition_result' | 'verify.finished'
   | 'decision.made'
@@ -228,9 +228,10 @@ Selected by `WALLET_MODE=real|mock`.
 
 | Method | Path | Body | Returns |
 | ------ | ---- | ---- | ------- |
-| GET  | `/health` | – | `{ ok, walletMode, aiUp, network }` |
+| GET  | `/health` | – | `{ ok, walletMode, aiUp, aiModel?, network, error? }` (`aiModel` from apps/ai `/health` while it is up; `ok:false` + `error` while the agent wallet is not ready) |
 | GET  | `/config` | – | `{ assetId, assetTicker, precision, network }` |
-| POST | `/escrows` | `{ title, rawText, amount, deadline }` | `Escrow & { clientToken }` (state `DRAFT`, parse starts async; the only response that carries `clientToken`) |
+| GET  | `/wallet` | – | `WalletInfo & { assets: AssetBalance[] }` (agent wallet; same shape as party `/wallet`) |
+| POST | `/escrows` | `{ title, rawText, amount, deadline }` | `201 Escrow & { clientToken }` (state `DRAFT`, parse starts async; the only response that carries `clientToken`) |
 | GET  | `/escrows` | – | `Escrow[]` |
 | GET  | `/escrows/:id` | – | `{ escrow, events }` |
 | POST | `/escrows/:id/reparse` | `{ rawText? }` | `Escrow` |
@@ -238,10 +239,11 @@ Selected by `WALLET_MODE=real|mock`.
 | POST | `/escrows/:id/cancel` | `{ role }` | `Escrow` |
 | POST | `/escrows/:id/refund-invoice` | `{ invoice }` | `Escrow` (client provides) |
 | POST | `/escrows/:id/funded` | `{ txid }` | `Escrow` (client hint; agent still verifies) |
-| POST | `/escrows/:id/deliveries` | multipart: `file`, `payoutInvoice` | `Escrow` |
+| POST | `/escrows/:id/deliveries` | multipart: `file`, `payoutInvoice` | `Escrow` (max 20 MB, only in `FUNDED` before the deadline) |
 | GET  | `/escrows/:id/deliveries/:n/files` | – | `{ path, sizeBytes }[]` (the unpacked delivery) |
 | GET  | `/escrows/:id/deliveries/:n/files/*` | – | the raw file, sent with `Content-Security-Policy: sandbox` |
 | POST | `/escrows/:id/approve` | `{ deliveryN, decision: 'approve' \| 'dispute', reason?, clientToken }` | `Escrow`; `403` wrong token, `409` not `AWAITING_APPROVAL` or not the latest delivery, `400` dispute without `reason` |
+| POST | `/escrows/:id/retry-step` | `{ force? }` | `Escrow` (re-run a stuck step now; `force` re-sends a payout/refund whose outcome is unknown after a crash — check the wallet first) |
 | POST | `/dev/mine` | `{ blocks?: number }` | `{ height }` (regtest only) |
 | POST | `/dev/reset` | – | clears db (dev only) |
 | WS   | `/ws?escrowId=` | – | `WsMessage` stream |
@@ -291,6 +293,11 @@ export interface ReviewRequest {
 | POST | `/wallet/sign` | `{ message }` | `{ signature, address }` |
 
 All three servers send permissive CORS headers (LAN demo) and log every request on one line.
+Errors: `400 { error, details }` (zod issues) for bad bodies, `404` unknown escrow, `409 { error, details? }`
+for an action the current state does not allow (e.g. stale `termsHash`, delivery before funding).
+
+Route constants in `@escrow/shared` double as Fastify patterns: `AGENT_ROUTES.accept(':id')` is
+`/escrows/:id/accept`.
 
 ## 5. Environment variables (`.env.example`)
 
