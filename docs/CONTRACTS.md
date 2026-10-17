@@ -208,7 +208,7 @@ Selected by `WALLET_MODE=real|mock`.
 | ------ | ---- | ---- | ------- |
 | GET  | `/health` | – | `{ ok, model, loaded, device }` |
 | POST | `/parse` | `{ title, rawText, amountDisplay, assetTicker, deadline }` | `ParseResult` |
-| POST | `/explain` | `{ event: LogEvent, escrow: Escrow }` | `text/event-stream` of `{ text }` deltas, final `{ done: true, text }` |
+| POST | `/explain` | `{ event: LogEvent, escrow: Escrow }` | `text/event-stream` of `{ text }` deltas, final `{ done: true, text, source? }` (`source`: `'ai' \| 'template'`) |
 | POST | `/explain/sync` | same | `{ text, source }` (non-streaming fallback) |
 
 ```ts
