@@ -78,6 +78,8 @@ The 4B does not fit in 4 GB VRAM next to the KV cache and runs ~8× slower, so *
 fallback (then 0.8B on CPU). First completion after load is slow (Vulkan shader compile), hence the warm-up.
 Eval (parse-v2 + guards, 2B): **10/10** from the model. Explanations (explain-v3): 15/16 from the model, the
 16th correctly rejected by a guard and replaced by its template. Models cache in `~/.qvac/models`.
+Re-run on 2026-10-17 after client review: parse-v3 **17/17** from the model (avg 4.6 s, max 11.4 s on
+`two-hashes`); explain-v3 15/16 (the `wait` decision still falls back to its template).
 `/review` (review-v2, 2B, landing fixtures, ~3 KB of excerpts): 4.3–5.8 s. Integration 1 (agent on another
 laptop over an iPhone hotspot): `/parse` 3–4 s, `/explain` 0.5–0.95 s, all explanations from the model.
 
