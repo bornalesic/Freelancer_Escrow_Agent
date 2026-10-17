@@ -23,8 +23,12 @@ const DEFAULT_SETTLE_MS = 3_000
 const DEFAULT_POLL_MS = 150
 const DEFAULT_PRECISION = 6
 const DEFAULT_TICKER = 'TUSDT'
-/** Obviously-fake asset id for mock mode, used when ESCROW_ASSET_ID is not set yet. */
-const DEFAULT_MOCK_ASSET_ID = 'rgb:mock-TUSDT'
+/**
+ * Obviously-fake asset id for mock mode, used when ESCROW_ASSET_ID is not set yet. Must equal
+ * MOCK_ASSET_ID in apps/agent/src/config.ts: escrows carry the agent's id, so any other value here
+ * seeds the client's 100 under an asset the escrow never asks for.
+ */
+const DEFAULT_MOCK_ASSET_ID = 'mock-tusdt'
 /** Mock wallets always have "enough" BTC for fees; the number is cosmetic. */
 const DEFAULT_MOCK_BTC_SAT = '100000000'
 

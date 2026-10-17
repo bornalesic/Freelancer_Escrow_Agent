@@ -6,10 +6,15 @@ only — the native RGB binaries have no Windows build.
 
 ## Deliver in this order
 1. **`MockWallet` by H2** (others are blocked on it). In-memory balances persisted to a shared JSON
-   file (`MOCK_LEDGER_PATH`, default `../../.mock-ledger.json`) with a file lock, so the agent and both
-   party servers on one machine see each other's payments. Invoices: `mock:<recipientId>:<assetId>:<amount>`.
+   file (`MOCK_LEDGER_PATH`, default `.mock-ledger.json`) with a file lock, so the agent and both
+   party servers on one machine see each other's payments. A relative path resolves against the
+   **repo root, not the process cwd**: `npm run -w <workspace>` starts each app in its own folder, so a
+   cwd-relative path gave every process its own ledger. Invoices: `mock:<recipientId>:<assetId>:<amount>`.
    Transfers go `pending` → `settled` after `MOCK_SETTLE_MS` (default 3000) to mimic real behaviour.
-   Seed the ledger: client 100 tUSDT, others 0.
+   Seed the ledger: client 100 tUSDT, others 0. With `ESCROW_ASSET_ID` empty the mock asset id is
+   `mock-tusdt`, the same default as `apps/agent` (`MOCK_ASSET_ID` in its `config.ts`); keep them equal.
+   The seed only applies when the ledger file is first created, so after changing asset env vars
+   delete `.mock-ledger.json`.
 2. **`RgbWdkWallet`** wrapping `@utexo/wdk-wallet-rgb` (`WalletManagerRgb` → `getAccount()`):
    - `init()`: open manager with `{ network, dataDir, indexerUrl, transportEndpoint }` from env;
      `registerWallet()`; if fewer than `MIN_FREE_UTXOS` (default 5) free UTXOs, `createUtxos`.
@@ -197,8 +202,15 @@ Map these in `TransferSummary`: `WaitingCounterparty`/`WaitingConfirmations` →
 2. **Recipient** `refreshWallet()` → recipient moves to `WaitingConfirmations` (this is the step that
    pulls the consignment off the proxy — without it nothing ever progresses).
 3. **Sender** `refreshWallet()` → sender moves to `WaitingConfirmations`.
-4. Mine a block, then both refresh again → `Settled`. The sender settles one refresh before the
-   recipient does, so **do not stop polling when the sender says Settled** — wait for the recipient.
+4. Mine blocks, refreshing both after each. Each side settles at its **own** `minConfirmations`: the
+   sender at the value passed to `transfer()` (1 in the rehearsal), the recipient at the value its
+   invoice was created with — and rgb-sdk's `blindReceive` defaults to **3** (README: `minConfirmations:
+   3`, `durationSeconds: 2000`). The rehearsal didn't pass one, so the sender settled after block 1
+   and the recipient only after block 3. **Do not stop polling when the sender says Settled** — wait
+   for the recipient. `RgbWdkWallet.createInvoice()` must pass `minConfirmations: MIN_CONFIRMATIONS`:
+   WDK's `receiveAsset(options)` forwards options to `blindReceive` untouched, though its 2.0.3 types
+   declare only `assetId`, `amount`, `witness` (needs a small type augmentation). On signet, 3 blocks
+   is ~30 min.
 
 On regtest the whole invoice→settled cycle takes **under a second**. `WALLET_POLL_MS=2000` is fine.
 
