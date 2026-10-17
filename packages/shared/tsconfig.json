@@ -1,0 +1,9 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    // Browser-safe package: DOM lib for TextEncoder/crypto, no Node types.
+    "lib": ["ES2023", "DOM"],
+    "types": []
+  },
+  "include": ["src", "test"]
+}
