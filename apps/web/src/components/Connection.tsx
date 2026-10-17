@@ -1,15 +1,15 @@
 // Health of everything this screen depends on, polled from /health. Shared via context so every
 // part of a view (dots, banner, wallet card) reads one poll instead of starting its own.
 import { createContext, useContext, type ReactNode } from 'react';
-import type { AgentHealth, PartyHealth } from '@escrow/shared';
+import type { AgentHealthResponse, PartyHealthResponse } from '@escrow/shared';
 import { config } from '../config';
 import { agentApi, partyApi } from '../lib/api';
 import { usePoll, type Poll } from '../lib/hooks';
 
 interface Health {
-  agent: Poll<AgentHealth>;
+  agent: Poll<AgentHealthResponse>;
   /** undefined on screens without a party server (/agent). */
-  party?: Poll<PartyHealth>;
+  party?: Poll<PartyHealthResponse>;
 }
 
 const HealthContext = createContext<Health>({ agent: { loading: true } });

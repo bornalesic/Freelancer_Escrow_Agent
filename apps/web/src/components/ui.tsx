@@ -26,6 +26,7 @@ const STATE_STYLE: Record<EscrowState, string> = {
   FUNDED: 'bg-teal-100 text-teal-800',
   DELIVERED: 'bg-violet-100 text-violet-800',
   VERIFYING: 'bg-violet-100 text-violet-800',
+  AWAITING_APPROVAL: 'bg-sky-600 text-white',
   RELEASING: 'bg-emerald-100 text-emerald-800',
   RELEASED: 'bg-emerald-600 text-white',
   REFUNDING: 'bg-orange-100 text-orange-800',
@@ -41,6 +42,7 @@ const STATE_LABEL: Record<EscrowState, string> = {
   FUNDED: 'Funded',
   DELIVERED: 'Delivered',
   VERIFYING: 'Checking work',
+  AWAITING_APPROVAL: 'Awaiting approval',
   RELEASING: 'Paying freelancer',
   RELEASED: 'Paid',
   REFUNDING: 'Refunding client',
@@ -62,7 +64,15 @@ export function Empty({ children }: { children: ReactNode }) {
   return <p className="py-8 text-center text-slate-500">{children}</p>;
 }
 
-export function Countdown({ deadline }: { deadline: string }) {
+export function Countdown({
+  deadline,
+  format = (t) => `${t} left`,
+  expired = 'Deadline passed',
+}: {
+  deadline: string;
+  format?: (time: string) => string;
+  expired?: string;
+}) {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     const t = setInterval(() => setNow(Date.now()), 1_000);
@@ -73,7 +83,32 @@ export function Countdown({ deadline }: { deadline: string }) {
   const s = Math.floor((left % 60_000) / 1_000);
   return (
     <span className={`tabular-nums ${left === 0 ? 'text-red-600' : ''}`}>
-      {left === 0 ? 'Deadline passed' : `${m}:${String(s).padStart(2, '0')} left`}
+      {left === 0 ? expired : format(`${m}:${String(s).padStart(2, '0')}`)}
+    </span>
+  );
+}
+
+/** Time left for the client to answer a review; no answer releases the payment. */
+export function ReviewCountdown({ dueAt }: { dueAt: string }) {
+  return <Countdown deadline={dueAt} format={(t) => `Approves automatically in ${t}`} expired="Review time is up, approving…" />;
+}
+
+/** A number that briefly flashes and pops when it changes (balances moving on the projector). */
+export function AnimatedAmount({ value }: { value: string }) {
+  const [flash, setFlash] = useState(false);
+  const [prev, setPrev] = useState(value);
+  if (value !== prev) {
+    setPrev(value);
+    setFlash(true);
+  }
+  useEffect(() => {
+    if (!flash) return;
+    const t = setTimeout(() => setFlash(false), 1_200);
+    return () => clearTimeout(t);
+  }, [flash]);
+  return (
+    <span className={`inline-block rounded px-1 transition-all duration-700 ${flash ? 'scale-110 bg-amber-300/60' : 'scale-100 bg-transparent'}`}>
+      {value}
     </span>
   );
 }

@@ -45,6 +45,9 @@ your machine."
 
 Not part of the 4 minutes. Use it in Q&A when a judge asks about work a machine can't check, with a
 second escrow already funded (`REVIEW_WINDOW_SEC` ≈ 120) so nobody waits on the chain.
+On `/client` use **Paste review demo** for the agreement text; deliver `fixtures/dist/landing-v1.zip`
+then `landing-v2.zip`. Approve and Dispute only work in the browser that created the agreement (it holds
+the `clientToken`); the dispute form has one-click "Not met: …" reasons, so no typing on stage.
 
 1. Agreement (already accepted and funded):
    > "Build a one-page landing site for my bakery as index.html. Also include a README. The page should
