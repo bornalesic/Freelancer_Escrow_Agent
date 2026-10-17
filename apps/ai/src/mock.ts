@@ -14,6 +14,7 @@ const sleep = (ms: number, signal?: AbortSignal) =>
 
 const PARSE_DELAY_MS = 800;   // long enough for the UI to show the DRAFT state
 const WORD_DELAY_MS = 40;
+const REVIEW_DELAY_MS = 1200;
 
 export function mockHandlers(): AiHandlers {
   return {
@@ -37,6 +38,25 @@ export function mockHandlers(): AiHandlers {
         return result;
       }
       return { ...fallbackParse(req), ms: Date.now() - t0 };
+    },
+
+    // Mirrors the demo script: delivery #1 looks unmet (client disputes), later deliveries look met.
+    async review(req) {
+      const t0 = Date.now();
+      await sleep(REVIEW_DELAY_MS);
+      const met = req.deliveryN > 1;
+      return {
+        items: req.escrow.conditions.filter((c) => c.kind === 'client_review').map((c) => ({
+          conditionId: c.id,
+          opinion: met ? 'looks_met' as const : 'looks_unmet' as const,
+          note: met
+            ? `Mock opinion: in delivery #${req.deliveryN} this looks met.`
+            : `Mock opinion: in delivery #${req.deliveryN} this does not look met yet.`,
+        })),
+        source: 'ai',
+        model: 'mock',
+        ms: Date.now() - t0,
+      };
     },
 
     async explain(req, onDelta, signal) {

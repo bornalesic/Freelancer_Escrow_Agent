@@ -4,7 +4,7 @@ import { cleanExplanation, explainEvent, isGrounded } from '../src/explain.ts';
 import { buildFacts, failingTestNames } from '../src/facts.ts';
 import type { GenerateOptions, LlmEngine } from '../src/llm.ts';
 import { templateFor } from '../src/templates.ts';
-import { NODE_TEST_FAILURE, escrow, event } from './fixtures.ts';
+import { NODE_TEST_FAILURE, escrow, event, landingEscrow } from './fixtures.ts';
 
 const failResult = { conditionId: 'c1', passed: false, evidence: { exitCode: 1, stdoutTail: NODE_TEST_FAILURE, durationMs: 900 } };
 
@@ -54,6 +54,23 @@ describe('facts + templates', () => {
     expect(f('release')).toContain('release 50 tUSDT to the freelancer');
     expect(f('retry')).toContain('stays locked');
     expect(f('refund')).toContain('refund 50 tUSDT to the client');
+  });
+
+  it('explains client review steps from the escrow, not from guesses', () => {
+    const t = (e: ReturnType<typeof event>, esc = landingEscrow()) => templateFor(buildFacts(e, esc));
+    expect(t(event('decision.made', { decision: { action: 'await_approval', reason: 'r', pending: ['c3'] } })))
+      .toBe('Every automatic check passed, so the 50 tUSDT stays locked while the client reviews 1 item.');
+
+    const approved = landingEscrow({ deliveries: [{ ...landingEscrow().deliveries[0]!, approval: { decision: 'approve', at: '2026-10-17T12:05:00Z' } }] });
+    expect(t(event('decision.made', { decision: { action: 'release', reason: 'r' } }), approved)).toMatch(/^The client approved the delivery/);
+
+    const disputed = landingEscrow({ deliveries: [{ ...landingEscrow().deliveries[0]!, approval: { decision: 'dispute', at: '2026-10-17T12:05:00Z', reason: 'header should be warm' } }] });
+    expect(t(event('decision.made', { decision: { action: 'retry', reason: 'r', failed: ['c3'] } }), disputed)).toMatch(/^The client disputed the delivery/);
+    expect(t(event('review.disputed', { n: 1 }), disputed)).toBe('The client disputed delivery #1: "header should be warm".');
+
+    const reviewed = landingEscrow({ deliveries: [{ ...landingEscrow().deliveries[0]!, review: { items: [{ conditionId: 'c3', opinion: 'looks_unmet', note: 'Dark blue header.' }], source: 'ai', ms: 900 } }] });
+    expect(t(event('review.report_ready', { n: 1 }), reviewed)).toBe("QVAC's advisory review of delivery #1 is ready (1 looks unmet); the client makes the call.");
+    expect(t(event('terms.reparse_requested'))).toBe('The client asked for the agreement to be read again, so new terms will be proposed.');
   });
 });
 

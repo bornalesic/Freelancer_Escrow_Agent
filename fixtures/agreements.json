@@ -1,92 +1,267 @@
-[
-  {
-    "id": "slugify-demo",
-    "title": "Slugify function",
-    "rawText": "Build a JavaScript function `slugify` that lowercases text, replaces spaces with dashes and strips anything that isn't a letter, number or dash. The included tests must pass. Also include a README. Pay 50 USDT. Deadline: 30 minutes.",
-    "amountDisplay": "50",
-    "assetTicker": "tUSDT",
-    "deadline": "2026-10-18T12:00:00Z",
-    "expect": { "kinds": ["tests_pass", "file_present"], "notKinds": ["file_hash"], "commands": ["npm test"], "pathPatterns": ["readme"] }
-  },
-  {
-    "id": "vague-logo",
-    "title": "Bakery logo",
-    "rawText": "Design a nice, modern logo for my bakery. It should look professional and use warm colours. Pay 30 USDT, deadline in 2 days.",
-    "amountDisplay": "30",
-    "assetTicker": "tUSDT",
-    "deadline": "2026-10-19T12:00:00Z",
-    "expect": { "notKinds": ["tests_pass", "file_hash"], "minClarifications": 1 }
-  },
-  {
-    "id": "vague-landing",
-    "title": "Landing page polish",
-    "rawText": "Make my landing page look nice and load fast. Good quality code please. 80 USDT, due Friday.",
-    "amountDisplay": "80",
-    "assetTicker": "tUSDT",
-    "deadline": "2026-10-23T17:00:00Z",
-    "expect": { "notKinds": ["tests_pass", "file_hash"], "minClarifications": 1 }
-  },
-  {
-    "id": "report-hash",
-    "title": "Final report",
-    "rawText": "Deliver the final report as report.pdf. Its SHA-256 must be 3a7bd3e2360a3d29eea436fcfb7e44c735d117c42d1c1835420b6b9942dd4f1b. 20 USDT, deadline tomorrow.",
-    "amountDisplay": "20",
-    "assetTicker": "tUSDT",
-    "deadline": "2026-10-18T18:00:00Z",
-    "expect": { "kinds": ["file_hash"], "notKinds": ["tests_pass"], "hashes": ["3a7bd3e2360a3d29eea436fcfb7e44c735d117c42d1c1835420b6b9942dd4f1b"] }
-  },
-  {
-    "id": "hash-without-value",
-    "title": "Dataset delivery",
-    "rawText": "Deliver the cleaned dataset as data.csv. We will check its SHA-256 hash against the one I send you later. 40 USDT within 3 days.",
-    "amountDisplay": "40",
-    "assetTicker": "tUSDT",
-    "deadline": "2026-10-20T12:00:00Z",
-    "expect": { "notKinds": ["file_hash", "tests_pass"], "minClarifications": 1 }
-  },
-  {
-    "id": "python-cli",
-    "title": "CSV to JSON CLI",
-    "rawText": "Write a Python CLI that converts CSV files to JSON. `pytest` must pass, and include a README.md and a LICENSE file. 60 USDT, 3 days.",
-    "amountDisplay": "60",
-    "assetTicker": "tUSDT",
-    "deadline": "2026-10-20T12:00:00Z",
-    "expect": { "kinds": ["tests_pass", "file_present"], "notKinds": ["file_hash"], "commands": ["pytest"], "pathPatterns": ["readme", "license"] }
-  },
-  {
-    "id": "bugfix-mixed",
-    "title": "Login bug fix",
-    "rawText": "Fix the login bug in our React app. All unit tests (npm test) must pass, and the UI should feel smooth. 100 USDT, deadline 24 hours.",
-    "amountDisplay": "100",
-    "assetTicker": "tUSDT",
-    "deadline": "2026-10-18T12:00:00Z",
-    "expect": { "kinds": ["tests_pass"], "notKinds": ["file_hash"], "commands": ["npm test"], "minClarifications": 1 }
-  },
-  {
-    "id": "docker-files",
-    "title": "Dockerize API",
-    "rawText": "Create a Dockerfile and a docker-compose.yml for our Node API, plus a short README. 45 USDT.",
-    "amountDisplay": "45",
-    "assetTicker": "tUSDT",
-    "deadline": "2026-10-19T12:00:00Z",
-    "expect": { "kinds": ["file_present"], "notKinds": ["file_hash", "tests_pass"], "pathPatterns": ["dockerfile", "docker-compose.yml", "readme"] }
-  },
-  {
-    "id": "two-hashes",
-    "title": "Logo files",
-    "rawText": "Deliver two files: logo.svg with SHA-256 9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08 and logo.png with SHA-256 60303ae22b998861bce3b28f33eec1be758a213c86c93c076dbe9f558c11c752. 25 USDT.",
-    "amountDisplay": "25",
-    "assetTicker": "tUSDT",
-    "deadline": "2026-10-19T12:00:00Z",
-    "expect": { "kinds": ["file_hash"], "notKinds": ["tests_pass"], "hashes": ["9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08", "60303ae22b998861bce3b28f33eec1be758a213c86c93c076dbe9f558c11c752"] }
-  },
-  {
-    "id": "rate-limiter",
-    "title": "Rate limiter library",
-    "rawText": "Implement a rate limiter library in TypeScript. The test suite (npm run test:ci) must pass within 120 seconds. The code should be clean and well documented. Include a README. 150 USDT, deadline one week.",
-    "amountDisplay": "150",
-    "assetTicker": "tUSDT",
-    "deadline": "2026-10-24T12:00:00Z",
-    "expect": { "kinds": ["tests_pass", "file_present"], "notKinds": ["file_hash"], "commands": ["npm run test:ci"], "pathPatterns": ["readme"], "minClarifications": 1 }
-  }
-]
+{
+  "$comment": "Eval set for apps/ai /parse (WS2). Each case builds a ParseRequest: deadline = now + deadlineMinutes. `expect.conditions` are partial matches: every listed condition must appear (match on kind + the listed fields; description/id/timeoutSec are free; pathPattern compares as a glob both ways, so README* matches README.md). `expect.extraConditionsAllowed` false = no other conditions. `expect.minClarifications` = at least this many clarifications. With client review, subjective wishes become client_review conditions; clarifications are only for things that can't be agreed yet. Cases 1-10 by WS4, 11-15 added by WS2 for guard regressions and the landing demo, 16-17 web shops that used to return no conditions. dinamo-shop-placeholder is a stand-in text: replace it with the real Dinamo agreement.",
+  "cases": [
+    {
+      "id": "slugify-demo",
+      "title": "slugify function",
+      "rawText": "Build a JavaScript function `slugify` that lowercases text, replaces spaces with dashes and strips anything that isn't a letter, number or dash. The included tests must pass. Also include a README. Pay 50 USDT. Deadline: 30 minutes.",
+      "amountDisplay": "50",
+      "assetTicker": "tUSDT",
+      "deadlineMinutes": 30,
+      "expect": {
+        "conditions": [
+          { "kind": "tests_pass", "command": "npm test" },
+          { "kind": "file_present", "pathPattern": "README.md" }
+        ],
+        "extraConditionsAllowed": false,
+        "minClarifications": 0
+      }
+    },
+    {
+      "id": "tests-only",
+      "title": "Fix the date parser",
+      "rawText": "Fix the bug in parseDate so that the existing test suite passes. Run it with npm test. 20 USDT, due in one hour.",
+      "amountDisplay": "20",
+      "assetTicker": "tUSDT",
+      "deadlineMinutes": 60,
+      "expect": {
+        "conditions": [{ "kind": "tests_pass", "command": "npm test" }],
+        "extraConditionsAllowed": false,
+        "minClarifications": 0
+      }
+    },
+    {
+      "id": "custom-test-command",
+      "title": "Python CSV cleaner",
+      "rawText": "Write a Python script clean.py that removes empty rows from a CSV. Done when `python -m pytest` passes. Pay 35 USDT within 2 hours.",
+      "amountDisplay": "35",
+      "assetTicker": "tUSDT",
+      "deadlineMinutes": 120,
+      "expect": {
+        "conditions": [
+          { "kind": "tests_pass", "command": "python -m pytest" },
+          { "kind": "file_present", "pathPattern": "clean.py" }
+        ],
+        "extraConditionsAllowed": true,
+        "minClarifications": 0
+      }
+    },
+    {
+      "id": "exact-file-hash",
+      "title": "Deliver the signed contract PDF",
+      "rawText": "Send me the final contract as contract.pdf. It must be exactly the version we agreed on, sha256 9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08. 10 USDT, deadline 15 minutes.",
+      "amountDisplay": "10",
+      "assetTicker": "tUSDT",
+      "deadlineMinutes": 15,
+      "expect": {
+        "conditions": [
+          {
+            "kind": "file_hash",
+            "fileName": "contract.pdf",
+            "sha256": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08"
+          }
+        ],
+        "extraConditionsAllowed": true,
+        "minClarifications": 0
+      }
+    },
+    {
+      "id": "several-files-present",
+      "title": "Landing page",
+      "rawText": "Build a static landing page. The delivery must contain index.html, styles.css and a LICENSE file. 40 USDT, due in 3 hours.",
+      "amountDisplay": "40",
+      "assetTicker": "tUSDT",
+      "deadlineMinutes": 180,
+      "expect": {
+        "conditions": [
+          { "kind": "file_present", "pathPattern": "index.html" },
+          { "kind": "file_present", "pathPattern": "styles.css" },
+          { "kind": "file_present", "pathPattern": "LICENSE" }
+        ],
+        "extraConditionsAllowed": false,
+        "minClarifications": 0
+      }
+    },
+    {
+      "id": "tests-plus-vague-part",
+      "title": "Todo API",
+      "rawText": "Build a small REST API for todos in Node. npm test must pass and include a README. The code should also be clean and well organised. 60 USDT, deadline 45 minutes.",
+      "amountDisplay": "60",
+      "assetTicker": "tUSDT",
+      "deadlineMinutes": 45,
+      "expect": {
+        "conditions": [
+          { "kind": "tests_pass", "command": "npm test" },
+          { "kind": "file_present", "pathPattern": "README.md" },
+          { "kind": "client_review" }
+        ],
+        "extraConditionsAllowed": false,
+        "minClarifications": 0
+      }
+    },
+    {
+      "id": "glob-pattern",
+      "title": "Unit tests for the parser",
+      "rawText": "Add unit tests for the parser module. Put them in a tests folder (any .test.js file under tests/) and make sure npm test passes. 25 USDT in 1 hour.",
+      "amountDisplay": "25",
+      "assetTicker": "tUSDT",
+      "deadlineMinutes": 60,
+      "expect": {
+        "conditions": [
+          { "kind": "tests_pass", "command": "npm test" },
+          { "kind": "file_present", "pathPattern": "tests/**/*.test.js" }
+        ],
+        "extraConditionsAllowed": false,
+        "minClarifications": 0
+      }
+    },
+    {
+      "id": "informal-wording",
+      "title": "Fizzbuzz",
+      "rawText": "hey can u write fizzbuzz in js?? tests r included, just make them go green (npm test). oh and a readme pls. ill pay 5 usdt, need it in 20 min",
+      "amountDisplay": "5",
+      "assetTicker": "tUSDT",
+      "deadlineMinutes": 20,
+      "expect": {
+        "conditions": [
+          { "kind": "tests_pass", "command": "npm test" },
+          { "kind": "file_present", "pathPattern": "README.md" }
+        ],
+        "extraConditionsAllowed": false,
+        "minClarifications": 0
+      }
+    },
+    {
+      "id": "vague-design",
+      "title": "Make my website look nice",
+      "rawText": "Make my website look nice and modern. I want it to feel professional. 30 USDT, by tomorrow.",
+      "amountDisplay": "30",
+      "assetTicker": "tUSDT",
+      "deadlineMinutes": 1440,
+      "expect": {
+        "conditions": [{ "kind": "client_review" }],
+        "extraConditionsAllowed": false,
+        "minClarifications": 0
+      }
+    },
+    {
+      "id": "vague-quality",
+      "title": "Improve performance",
+      "rawText": "Make the app faster and fix whatever bugs you find. Pay 45 USDT when I'm happy with it. Deadline 2 hours.",
+      "amountDisplay": "45",
+      "assetTicker": "tUSDT",
+      "deadlineMinutes": 120,
+      "expect": {
+        "conditions": [{ "kind": "client_review" }],
+        "extraConditionsAllowed": false,
+        "minClarifications": 0
+      }
+    },
+    {
+      "id": "hash-sent-later",
+      "title": "Dataset delivery",
+      "rawText": "Deliver the cleaned dataset as data.csv. We will check its SHA-256 hash against the one I send you later. 40 USDT within 3 days.",
+      "amountDisplay": "40",
+      "assetTicker": "tUSDT",
+      "deadlineMinutes": 4320,
+      "expect": {
+        "conditions": [],
+        "extraConditionsAllowed": true,
+        "minClarifications": 1
+      }
+    },
+    {
+      "id": "docker-files",
+      "title": "Dockerize API",
+      "rawText": "Create a Dockerfile and a docker-compose.yml for our Node API, plus a short README. 45 USDT.",
+      "amountDisplay": "45",
+      "assetTicker": "tUSDT",
+      "deadlineMinutes": 1440,
+      "expect": {
+        "conditions": [
+          { "kind": "file_present", "pathPattern": "Dockerfile" },
+          { "kind": "file_present", "pathPattern": "docker-compose.yml" },
+          { "kind": "file_present", "pathPattern": "README.md" }
+        ],
+        "extraConditionsAllowed": false,
+        "minClarifications": 0
+      }
+    },
+    {
+      "id": "two-hashes",
+      "title": "Logo files",
+      "rawText": "Deliver two files: logo.svg with SHA-256 9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08 and logo.png with SHA-256 60303ae22b998861bce3b28f33eec1be758a213c86c93c076dbe9f558c11c752. 25 USDT.",
+      "amountDisplay": "25",
+      "assetTicker": "tUSDT",
+      "deadlineMinutes": 1440,
+      "expect": {
+        "conditions": [
+          { "kind": "file_hash", "fileName": "logo.svg", "sha256": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08" },
+          { "kind": "file_hash", "fileName": "logo.png", "sha256": "60303ae22b998861bce3b28f33eec1be758a213c86c93c076dbe9f558c11c752" }
+        ],
+        "extraConditionsAllowed": true,
+        "minClarifications": 0
+      }
+    },
+    {
+      "id": "rate-limiter",
+      "title": "Rate limiter library",
+      "rawText": "Implement a rate limiter library in TypeScript. The test suite (npm run test:ci) must pass within 120 seconds. The code should be clean and well documented. Include a README. 150 USDT, deadline one week.",
+      "amountDisplay": "150",
+      "assetTicker": "tUSDT",
+      "deadlineMinutes": 10080,
+      "expect": {
+        "conditions": [
+          { "kind": "tests_pass", "command": "npm run test:ci" },
+          { "kind": "file_present", "pathPattern": "README.md" },
+          { "kind": "client_review" }
+        ],
+        "extraConditionsAllowed": false,
+        "minClarifications": 0
+      }
+    },
+    {
+      "id": "landing-demo",
+      "title": "Bakery landing page",
+      "rawText": "Build a one-page landing site for my bakery as index.html. Also include a README. The page should look clean and use warm colours. Pay 30 USDT. Deadline: 30 minutes.",
+      "amountDisplay": "30",
+      "assetTicker": "tUSDT",
+      "deadlineMinutes": 30,
+      "expect": {
+        "conditions": [
+          { "kind": "file_present", "pathPattern": "index.html" },
+          { "kind": "file_present", "pathPattern": "README.md" },
+          { "kind": "client_review" }
+        ],
+        "extraConditionsAllowed": false,
+        "minClarifications": 0
+      }
+    },
+    {
+      "id": "sunglasses-shop",
+      "title": "Sunglasses web shop",
+      "rawText": "Create a web shop for sunglasses. It has to have a catalog of sunglasses, bright colors and a cart and a checkout. Pay 1500 USDT.",
+      "amountDisplay": "1500",
+      "assetTicker": "tUSDT",
+      "deadlineMinutes": 20160,
+      "expect": {
+        "conditions": [{ "kind": "client_review" }],
+        "extraConditionsAllowed": false,
+        "minClarifications": 0
+      }
+    },
+    {
+      "id": "dinamo-shop-placeholder",
+      "title": "Dinamo fan web shop",
+      "rawText": "Build a web shop for Dinamo fan merchandise. It needs product pages for jerseys and scarves, a shopping cart and a checkout. Pay 800 USDT, deadline in two weeks.",
+      "amountDisplay": "800",
+      "assetTicker": "tUSDT",
+      "deadlineMinutes": 20160,
+      "expect": {
+        "conditions": [{ "kind": "client_review" }],
+        "extraConditionsAllowed": false,
+        "minClarifications": 0
+      }
+    }
+  ]
+}

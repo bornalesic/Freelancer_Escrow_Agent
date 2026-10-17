@@ -1,14 +1,23 @@
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
-import type { Escrow, LogEvent } from '@escrow/shared';
+import type { Escrow, LogEvent, ParseRequest } from '@escrow/shared';
 import { REPO_ROOT } from '../src/config.ts';
-import type { AgreementCase } from '../src/evalCheck.ts';
+import { toParseRequest, type AgreementCase, type AgreementFile } from '../src/evalCheck.ts';
 
-export const agreements = JSON.parse(
-  readFileSync(path.join(REPO_ROOT, 'fixtures/agreements.json'), 'utf8'),
-) as AgreementCase[];
+export const agreements: AgreementCase[] = (
+  JSON.parse(readFileSync(path.join(REPO_ROOT, 'fixtures/agreements.json'), 'utf8')) as AgreementFile
+).cases;
 
-export const slugify = agreements.find((c) => c.id === 'slugify-demo')!;
+export const caseById = (id: string): AgreementCase => {
+  const c = agreements.find((x) => x.id === id);
+  if (!c) throw new Error(`no eval case ${id}`);
+  return c;
+};
+
+/** The eval case as a ParseRequest (deadline = now + deadlineMinutes). */
+export const req = (id: string): ParseRequest => toParseRequest(caseById(id));
+
+export const slugify = req('slugify-demo');
 
 export const NODE_TEST_FAILURE = `TAP version 13
 # Subtest: lowercases text
@@ -49,6 +58,22 @@ export function escrow(over: Partial<Escrow> = {}): Escrow {
     updatedAt: '2026-10-17T12:00:00Z',
     ...over,
   };
+}
+
+/** The bakery landing escrow with one client_review condition (c3). */
+export function landingEscrow(over: Partial<Escrow> = {}): Escrow {
+  return escrow({
+    title: 'Bakery landing page',
+    rawText: caseById('landing-demo').rawText,
+    state: 'AWAITING_APPROVAL',
+    conditions: [
+      { id: 'c1', kind: 'file_present', description: 'A file named index.html must be included.', pathPattern: 'index.html' },
+      { id: 'c2', kind: 'file_present', description: 'A file named README must be included.', pathPattern: 'README*' },
+      { id: 'c3', kind: 'client_review', description: 'The page should look clean and use warm colours.' },
+    ],
+    deliveries: [{ n: 1, fileName: 'landing-v1.zip', sha256: 'b'.repeat(64), sizeBytes: 2048, at: '2026-10-17T12:00:00Z' }],
+    ...over,
+  });
 }
 
 export function event(type: LogEvent['type'], data?: Record<string, unknown>, over: Partial<LogEvent> = {}): LogEvent {

@@ -23,13 +23,15 @@ export interface AiConfig {
   /** Internal budgets; kept below the agent's own timeouts so we always answer (with a fallback) first. */
   parseBudgetMs: number;
   explainBudgetMs: number;
+  reviewBudgetMs: number;
   /** Context window for the whole model; split across `parallel` slots. */
   ctxSize: number;
   parallel: number;
 }
 
 // Not env-configurable on purpose (only .env.example vars are allowed). Tuned on the GTX 1650 4 GB.
-const CTX_SIZE = 8192;
+// 16k split over 2 slots = 8k per request: enough for /review's ~10 KB of file excerpts.
+const CTX_SIZE = 16384;
 const PARALLEL = 2;
 const MARGIN_MS = 5000;
 
@@ -54,6 +56,7 @@ export function readConfig(env: NodeJS.ProcessEnv = process.env): AiConfig {
     qvacConfigPath: qvacConfigPath ? path.resolve(APP_DIR, qvacConfigPath) : undefined,
     parseBudgetMs: Math.max(5000, int(env.AI_PARSE_TIMEOUT_MS, 90_000) - MARGIN_MS),
     explainBudgetMs: Math.max(3000, int(env.AI_EXPLAIN_TIMEOUT_MS, 30_000) - MARGIN_MS),
+    reviewBudgetMs: Math.max(5000, int(env.AI_REVIEW_TIMEOUT_MS, 30_000) - MARGIN_MS),
     ctxSize: CTX_SIZE,
     parallel: PARALLEL,
   };

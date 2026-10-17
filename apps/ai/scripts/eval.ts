@@ -6,7 +6,7 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import type { ParseResult } from '@escrow/shared';
 import { loadEnvLocal, REPO_ROOT } from '../src/config.ts';
-import { checkCase, type AgreementCase } from '../src/evalCheck.ts';
+import { checkCase, toParseRequest, type AgreementCase, type AgreementFile } from '../src/evalCheck.ts';
 import { fallbackParse } from '../src/fallback.ts';
 import { PARSE_PROMPT_VERSION } from '../src/prompts.ts';
 
@@ -14,10 +14,10 @@ loadEnvLocal();
 const fallbackOnly = process.argv.includes('--fallback');
 const verbose = process.argv.includes('--verbose');
 const base = (process.env.AI_URL ?? 'http://localhost:4300').replace(/\/$/, '');
-const cases = JSON.parse(readFileSync(path.join(REPO_ROOT, 'fixtures/agreements.json'), 'utf8')) as AgreementCase[];
+const cases = (JSON.parse(readFileSync(path.join(REPO_ROOT, 'fixtures/agreements.json'), 'utf8')) as AgreementFile).cases;
 
 async function parse(c: AgreementCase): Promise<ParseResult> {
-  const { id: _id, expect: _expect, ...req } = c;
+  const req = toParseRequest(c);
   if (fallbackOnly) return { ...fallbackParse(req), ms: 0 };
   const res = await fetch(`${base}/parse`, {
     method: 'POST',
