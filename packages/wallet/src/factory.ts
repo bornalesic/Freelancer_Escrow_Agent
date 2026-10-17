@@ -1,0 +1,121 @@
+// createWallet({ role, mode }) -- the entry point apps/agent and apps/party use.
+//
+// WS3 depends on this exact name and signature: the agent drops its own in-process mock and switches
+// to this package as soon as `@escrow/wallet` exports it. Do not rename or reshape it without a
+// contract-change.
+//
+// Config comes only from env vars listed in .env.example (root CLAUDE.md). Nothing here logs a
+// mnemonic, and nothing here hard-codes a host, port, network or asset id.
+
+import type { EscrowWallet, Role } from './contract-types.ts'
+import { MockWallet, WalletError } from './mock-wallet.ts'
+import { resolveLedgerPath, type LedgerHandle, type LedgerSeed } from './ledger.ts'
+
+export type WalletMode = 'mock' | 'real'
+
+export interface CreateWalletParams {
+  role: Role
+  /** Defaults to WALLET_MODE from the environment, then 'mock'. */
+  mode?: WalletMode
+}
+
+const DEFAULT_SETTLE_MS = 3_000
+const DEFAULT_POLL_MS = 150
+const DEFAULT_PRECISION = 6
+const DEFAULT_TICKER = 'TUSDT'
+/** Obviously-fake asset id for mock mode, used when ESCROW_ASSET_ID is not set yet. */
+const DEFAULT_MOCK_ASSET_ID = 'rgb:mock-TUSDT'
+/** Mock wallets always have "enough" BTC for fees; the number is cosmetic. */
+const DEFAULT_MOCK_BTC_SAT = '100000000'
+
+function env(name: string): string | undefined {
+  const raw = process.env[name]
+  return raw === undefined || raw.trim() === '' ? undefined : raw.trim()
+}
+
+function intEnv(name: string, fallback: number): number {
+  const raw = env(name)
+  if (raw === undefined) return fallback
+  const n = Number(raw)
+  if (!Number.isInteger(n) || n < 0) {
+    throw new WalletError(`${name} must be a non-negative integer, got "${raw}"`)
+  }
+  return n
+}
+
+function resolveMode(explicit: WalletMode | undefined): WalletMode {
+  const raw = explicit ?? env('WALLET_MODE') ?? 'mock'
+  if (raw !== 'mock' && raw !== 'real') {
+    throw new WalletError(`WALLET_MODE must be "mock" or "real", got "${raw}"`)
+  }
+  return raw
+}
+
+/**
+ * Genesis state for the shared ledger. Only the first process to touch the file applies it, so every
+ * process must compute the same seed -- which means the asset env vars have to match across the
+ * agent and both party servers. CLAUDE.md: client starts with 100 tUSDT, everyone else with 0.
+ */
+function mockSeed(): LedgerSeed {
+  const precision = intEnv('ESCROW_ASSET_PRECISION', DEFAULT_PRECISION)
+  const unit = 10n ** BigInt(precision)
+  return {
+    asset: {
+      assetId: env('ESCROW_ASSET_ID') ?? DEFAULT_MOCK_ASSET_ID,
+      ticker: env('ESCROW_ASSET_TICKER') ?? DEFAULT_TICKER,
+      precision,
+    },
+    balances: {
+      client: (100n * unit).toString(),
+      freelancer: '0',
+      agent: '0',
+    },
+    btcSat: DEFAULT_MOCK_BTC_SAT,
+  }
+}
+
+export function mockLedgerHandle(): LedgerHandle {
+  return {
+    path: resolveLedgerPath(env('MOCK_LEDGER_PATH')),
+    seed: mockSeed(),
+  }
+}
+
+/**
+ * Build the wallet for a role. The returned wallet is usable immediately; calling `init()` is still
+ * correct (and required by the real implementation) but the mock seeds itself lazily, so forgetting
+ * it will not silently produce an empty ledger.
+ */
+export async function createWallet(p: CreateWalletParams): Promise<EscrowWallet> {
+  const mode = resolveMode(p.mode)
+  const network = env('RGB_NETWORK') ?? 'regtest'
+
+  if (mode === 'mock') {
+    // MOCK_FAIL_AMOUNT: paying exactly this many base units fails instead of settling, refunding the
+    // sender. The deterministic way to rehearse the refund path with no code change.
+    const failAmount = env('MOCK_FAIL_AMOUNT')
+    if (failAmount !== undefined && !/^\d+$/.test(failAmount)) {
+      throw new WalletError(
+        `MOCK_FAIL_AMOUNT must be integer base units as a decimal string, got "${failAmount}"`,
+      )
+    }
+
+    const wallet = new MockWallet({
+      role: p.role,
+      network,
+      ledger: mockLedgerHandle(),
+      settleMs: intEnv('MOCK_SETTLE_MS', DEFAULT_SETTLE_MS),
+      pollMs: DEFAULT_POLL_MS,
+      ...(failAmount === undefined ? {} : { failAmount }),
+    })
+    await wallet.init()
+    return wallet
+  }
+
+  // RgbWdkWallet is next on the WS1 list. Fail loudly rather than silently falling back to mock:
+  // a demo that quietly runs on fake money is worse than one that refuses to start.
+  throw new WalletError(
+    'WALLET_MODE=real is not implemented yet (RgbWdkWallet is still being built). ' +
+    'Run with WALLET_MODE=mock for now.',
+  )
+}
