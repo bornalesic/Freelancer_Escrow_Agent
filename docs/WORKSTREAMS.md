@@ -36,6 +36,7 @@ or never.
 - [ ] Fix contract mismatches. WS3 owns merges into `main`.
 
 ### H12 – H16 · Integration 2 — real RGB
+Step-by-step plan per laptop and workstream: `docs/INTEGRATION_PLAN.md`.
 - [ ] Three real wallets (agent, client, freelancer) on regtest, funded and with UTXOs
       (`scripts/setup-demo.ts`, WS1).
 - [ ] Full flow across **three laptops** on the LAN.
