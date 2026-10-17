@@ -82,6 +82,7 @@ export function conditionKey(c: DraftCondition | Condition): string {
     case 'tests_pass': return `tests_pass:${c.command}`;
     case 'file_hash': return `file_hash:${c.sha256}:${c.fileName ?? ''}`;
     case 'file_present': return `file_present:${c.pathPattern.toLowerCase()}`;
+    case 'client_review': return `client_review:${c.description.toLowerCase()}`;
   }
 }
 
@@ -94,6 +95,7 @@ export function paymentSentence(req: ParseRequest, conditions: DraftCondition[])
       case 'tests_pass': return c.command === DEFAULT_TEST_COMMAND ? 'the tests pass' : `"${c.command}" passes`;
       case 'file_hash': return `${c.fileName ?? 'the upload'} matches the agreed hash`;
       case 'file_present': return `${displayName(c.pathPattern)} is included`;
+      case 'client_review': return 'the client approves what they review';
     }
   });
   const list = parts.length > 1 ? `${parts.slice(0, -1).join(', ')} and ${parts.at(-1)}` : parts[0];
