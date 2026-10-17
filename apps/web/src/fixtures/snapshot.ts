@@ -1,12 +1,21 @@
-// Local stand-in for the agent's WebSocket `snapshot` (open any view with `?fixture=1`).
-// Test data only: the slugify demo after the first delivery failed, waiting for v2.
-import type { Escrow, LogEvent } from '@escrow/shared';
+// Local stand-ins for the agent's WebSocket `snapshot` (open any view with `?fixture=1`).
+// Test data only: the slugify demo after the first delivery failed, waiting for v2; and the bakery
+// landing page (client review) after the client disputed v1, with v2 awaiting approval
+// (`?fixture=1&escrow=esc_b4k3`).
+import { termsHash, type Escrow, type LogEvent } from '@escrow/shared';
+import type { EscrowView } from '../lib/escrowStore';
 
 const ID = 'esc_7f3a';
-const HASH = 'a3f9c2d17be04f6a9c58e1d2b7f3a0c4e6d9b2a1f8c7e5d3b0a9f6e4c2d1b0a9';
+const HASH = ''; // filled in by withHash()
+/** The real termsHash of the fixture's terms (and in both acceptances), so the UI's hash check passes. */
+function withHash(e: Escrow): Escrow {
+  const h = termsHash(e);
+  return { ...e, termsHash: h, acceptances: e.acceptances.map((a) => ({ ...a, termsHash: h })) };
+}
+
 const t = (min: number, sec = 0) => new Date(Date.UTC(2026, 9, 17, 10, min, sec)).toISOString();
 
-export const fixtureEscrow: Escrow = {
+export const fixtureEscrow: Escrow = withHash({
   id: ID,
   title: 'slugify function',
   rawText:
@@ -56,7 +65,7 @@ export const fixtureEscrow: Escrow = {
   ],
   createdAt: t(0),
   updatedAt: t(4, 5),
-};
+});
 
 let seq = 0;
 const ev = (e: Omit<LogEvent, 'id' | 'escrowId'>): LogEvent => ({
@@ -74,7 +83,7 @@ export const fixtureEvents: LogEvent[] = [
   }),
   ev({ at: t(1), actor: 'client', type: 'terms.accepted', title: 'Client accepted the terms', explain: false }),
   ev({ at: t(1, 30), actor: 'freelancer', type: 'terms.accepted', title: 'Freelancer accepted the terms', explain: false }),
-  ev({ at: t(1, 31), actor: 'agent', type: 'terms.agreed', title: 'Both parties agreed to the same terms (hash a3f9…)', explain: false }),
+  ev({ at: t(1, 31), actor: 'agent', type: 'terms.agreed', title: `Both parties agreed to the same terms (hash ${fixtureEscrow.termsHash?.slice(0, 4)}…)`, explain: false }),
   ev({ at: t(1, 32), actor: 'wallet', type: 'funding.invoice_created', title: 'Agent created a funding invoice for 50 tUSDT', explain: false }),
   ev({ at: t(2), actor: 'wallet', type: 'funding.payment_seen', title: 'Payment of 50 tUSDT seen', explain: false }),
   ev({
@@ -93,4 +102,147 @@ export const fixtureEvents: LogEvent[] = [
       'The test "strips punctuation" failed: "Hello, World!" became "hello,-world!" instead of "hello-world". The freelancer can upload a fixed version before the deadline.',
     explanationSource: 'template',
   }),
+];
+
+// ---- client review: bakery landing page ---------------------------------------------------------
+
+const RID = 'esc_b4k3';
+const RHASH = ''; // filled in by withHash()
+const r = (min: number, sec = 0) => new Date(Date.UTC(2026, 9, 17, 9, min, sec)).toISOString();
+// Relative to page load, so the review countdown is visible when you open the fixture.
+const soon = (sec: number) => new Date(Date.now() + sec * 1_000).toISOString();
+
+export const reviewFixtureEscrow: Escrow = withHash({
+  id: RID,
+  title: 'Bakery landing page',
+  rawText:
+    'Build a one-page landing site for my bakery as index.html. Also include a README. The page should look clean and use warm colours. Pay 30 USDT. Deadline: 30 minutes.',
+  amount: '30000000',
+  assetId: 'rgb:fixture-asset-id',
+  assetTicker: 'tUSDT',
+  precision: 6,
+  deadline: soon(20 * 60),
+  state: 'AWAITING_APPROVAL',
+  summary:
+    'The freelancer delivers a one-page bakery site as index.html with a README. The client judges whether it looks clean and uses warm colours, then 30 USDT is paid.',
+  clarifications: [],
+  conditions: [
+    { id: 'c1', kind: 'file_present', description: 'The page is index.html', pathPattern: 'index.html' },
+    { id: 'c2', kind: 'file_present', description: 'A README is included', pathPattern: 'README.md' },
+    { id: 'c3', kind: 'client_review', description: 'The page looks clean and uses warm colours' },
+  ],
+  termsHash: RHASH,
+  acceptances: [
+    { role: 'client', termsHash: RHASH, at: r(1) },
+    { role: 'freelancer', termsHash: RHASH, at: r(1, 20) },
+  ],
+  fundingInvoice: 'rgb:fixture-funding-invoice-2',
+  refundInvoice: 'rgb:fixture-refund-invoice-2',
+  payoutInvoice: 'rgb:fixture-payout-invoice-3',
+  deliveries: [
+    {
+      n: 1,
+      fileName: 'landing-v1.zip',
+      sha256: '175c034cb93a2f9436ad01d1d1f27329b8d58aa7bfd8eaaa24df42023140d79a',
+      sizeBytes: 1772,
+      at: r(4),
+      results: [
+        { conditionId: 'c1', passed: true, evidence: { matched: ['index.html'], durationMs: 2 } },
+        { conditionId: 'c2', passed: true, evidence: { matched: ['README.md'], durationMs: 1 } },
+      ],
+      reviewDueAt: r(6, 5),
+      review: {
+        items: [
+          {
+            conditionId: 'c3',
+            opinion: 'looks_unmet',
+            note: 'The layout is clean, but the header is dark navy blue (#1e3a5f) and the accent is bright blue, which are cool colours, not warm ones.',
+          },
+        ],
+        source: 'ai',
+        model: 'qwen3-1.7b',
+        ms: 4210,
+      },
+      approval: { decision: 'dispute', at: r(5, 10), reason: 'The header should use warm colours, like orange or cream.' },
+    },
+    {
+      n: 2,
+      fileName: 'landing-v2.zip',
+      sha256: '1bcc306b7b913988d4160b0a622a43c343c3ca603f22f053de48402e4739b378',
+      sizeBytes: 1780,
+      at: r(8),
+      results: [
+        { conditionId: 'c1', passed: true, evidence: { matched: ['index.html'], durationMs: 2 } },
+        { conditionId: 'c2', passed: true, evidence: { matched: ['README.md'], durationMs: 1 } },
+      ],
+      reviewDueAt: soon(105),
+      review: {
+        items: [
+          {
+            conditionId: 'c3',
+            opinion: 'looks_met',
+            note: 'The page now uses burnt orange (#c2410c), honey yellow and cream, which are warm colours, and the layout stays simple and tidy.',
+          },
+        ],
+        source: 'ai',
+        model: 'qwen3-1.7b',
+        ms: 3980,
+      },
+    },
+  ],
+  createdAt: r(0),
+  updatedAt: r(8, 9),
+});
+
+let rseq = 0;
+const rev = (e: Omit<LogEvent, 'id' | 'escrowId'>): LogEvent => ({
+  id: `${RID}:${String(++rseq).padStart(4, '0')}`,
+  escrowId: RID,
+  ...e,
+});
+
+export const reviewFixtureEvents: LogEvent[] = [
+  rev({ at: r(0), actor: 'client', type: 'escrow.created', title: 'Client created the agreement', explain: false }),
+  rev({
+    at: r(0, 20), actor: 'ai', type: 'terms.proposed', title: 'Proposed 2 checks and 1 client review', explain: true,
+    explanation: 'Two things a machine can check: index.html and a README must be there. Whether the page looks clean and warm is for the client to judge.',
+    explanationSource: 'ai',
+  }),
+  rev({ at: r(1, 21), actor: 'agent', type: 'terms.agreed', title: `Both parties agreed to the same terms (hash ${reviewFixtureEscrow.termsHash?.slice(0, 4)}…)`, explain: false }),
+  rev({ at: r(2, 10), actor: 'wallet', type: 'funding.settled', title: '30 tUSDT locked in escrow', explain: false }),
+  rev({ at: r(4), actor: 'freelancer', type: 'delivery.received', title: 'Delivery 1 received: landing-v1.zip', explain: false }),
+  rev({ at: r(4, 2), actor: 'verifier', type: 'verify.finished', title: '2 of 2 checks passed', explain: false }),
+  rev({
+    at: r(4, 3), actor: 'agent', type: 'decision.made', title: 'Decision: waiting for the client to review', explain: false,
+    data: { action: 'await_approval' },
+  }),
+  rev({ at: r(4, 8), actor: 'ai', type: 'review.report_ready', title: 'AI review ready: 0 of 1 looks met', explain: false }),
+  rev({
+    at: r(5, 10), actor: 'client', type: 'review.disputed', title: 'Client disputed delivery 1', explain: true,
+    explanation: 'The client said the header should use warm colours. The money stays locked and the freelancer can send a fixed version.',
+    explanationSource: 'ai',
+  }),
+  rev({
+    at: r(5, 11), actor: 'agent', type: 'decision.made', title: 'Decision: no payment yet, retry allowed', explain: false,
+    data: { action: 'retry' },
+  }),
+  rev({ at: r(8), actor: 'freelancer', type: 'delivery.received', title: 'Delivery 2 received: landing-v2.zip', explain: false }),
+  rev({ at: r(8, 2), actor: 'verifier', type: 'verify.finished', title: '2 of 2 checks passed', explain: false }),
+  rev({
+    at: r(8, 3), actor: 'agent', type: 'decision.made', title: 'Decision: waiting for the client to review', explain: true,
+    data: { action: 'await_approval' },
+    explanation: 'Every automatic check passed. Now the client looks at the page and decides. If they do not answer within two minutes, the freelancer is paid.',
+    explanationSource: 'template',
+  }),
+  rev({
+    at: r(8, 9), actor: 'ai', type: 'review.report_ready', title: 'AI review ready: 1 of 1 looks met', explain: true,
+    explanation: 'QVAC thinks the new colours are warm. This is only advice: the client makes the call.',
+    explanationSource: 'ai',
+  }),
+];
+
+/** Every escrow shown in fixture mode. */
+export const fixtureViews: EscrowView[] = [
+  { escrow: fixtureEscrow, events: fixtureEvents },
+  { escrow: reviewFixtureEscrow, events: reviewFixtureEvents },
 ];

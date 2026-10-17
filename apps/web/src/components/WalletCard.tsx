@@ -4,7 +4,7 @@ import { config } from '../config';
 import { findBalance, partyApi } from '../lib/api';
 import { usePoll } from '../lib/hooks';
 import { useAgentConfig } from '../lib/agentConfig';
-import { Card } from './ui';
+import { AnimatedAmount, Card } from './ui';
 
 export function WalletCard() {
   const wallet = usePoll(config.fixture ? null : partyApi.wallet, 3_000);
@@ -20,7 +20,7 @@ export function WalletCard() {
       ) : (
         <>
           <p className="text-3xl font-bold tabular-nums">
-            {bal && asset ? formatAmount(bal.settled, asset.precision) : '–'}{' '}
+            {bal && asset ? <AnimatedAmount value={formatAmount(bal.settled, asset.precision)} /> : '–'}{' '}
             <span className="text-lg font-semibold text-slate-500">{asset?.assetTicker ?? ''}</span>
           </p>
           {bal && asset && bal.future !== bal.settled && (

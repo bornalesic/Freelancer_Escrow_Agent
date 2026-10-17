@@ -1,5 +1,5 @@
 {
-  "$comment": "Eval set for apps/ai /parse (WS2). Each case builds a ParseRequest: deadline = now + deadlineMinutes. `expect.conditions` are partial matches: every listed condition must appear (match on kind + the listed fields; description/id/timeoutSec are free). `expect.extraConditionsAllowed` false = no other conditions. `expect.minClarifications` = at least this many clarifications.",
+  "$comment": "Eval set for apps/ai /parse (WS2). Each case builds a ParseRequest: deadline = now + deadlineMinutes. `expect.conditions` lists the automatic conditions as partial matches: every listed condition must appear (match on kind + the listed fields; description/id/timeoutSec are free). `expect.extraConditionsAllowed` false = no other automatic conditions. `expect.minClientReviews` = at least this many `client_review` conditions (their descriptions are free; 0 = there must be none). `expect.minClarifications` = at least this many clarifications.",
   "cases": [
     {
       "id": "slugify-demo",
@@ -14,6 +14,7 @@
           { "kind": "file_present", "pathPattern": "README.md" }
         ],
         "extraConditionsAllowed": false,
+        "minClientReviews": 0,
         "minClarifications": 0
       }
     },
@@ -27,6 +28,7 @@
       "expect": {
         "conditions": [{ "kind": "tests_pass", "command": "npm test" }],
         "extraConditionsAllowed": false,
+        "minClientReviews": 0,
         "minClarifications": 0
       }
     },
@@ -43,6 +45,7 @@
           { "kind": "file_present", "pathPattern": "clean.py" }
         ],
         "extraConditionsAllowed": true,
+        "minClientReviews": 0,
         "minClarifications": 0
       }
     },
@@ -54,14 +57,9 @@
       "assetTicker": "tUSDT",
       "deadlineMinutes": 15,
       "expect": {
-        "conditions": [
-          {
-            "kind": "file_hash",
-            "fileName": "contract.pdf",
-            "sha256": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08"
-          }
-        ],
+        "conditions": [{ "kind": "file_hash", "fileName": "contract.pdf", "sha256": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08" }],
         "extraConditionsAllowed": true,
+        "minClientReviews": 0,
         "minClarifications": 0
       }
     },
@@ -79,6 +77,7 @@
           { "kind": "file_present", "pathPattern": "LICENSE" }
         ],
         "extraConditionsAllowed": false,
+        "minClientReviews": 0,
         "minClarifications": 0
       }
     },
@@ -95,7 +94,8 @@
           { "kind": "file_present", "pathPattern": "README.md" }
         ],
         "extraConditionsAllowed": false,
-        "minClarifications": 1
+        "minClientReviews": 1,
+        "minClarifications": 0
       }
     },
     {
@@ -111,6 +111,7 @@
           { "kind": "file_present", "pathPattern": "tests/**/*.test.js" }
         ],
         "extraConditionsAllowed": false,
+        "minClientReviews": 0,
         "minClarifications": 0
       }
     },
@@ -127,6 +128,7 @@
           { "kind": "file_present", "pathPattern": "README.md" }
         ],
         "extraConditionsAllowed": false,
+        "minClientReviews": 0,
         "minClarifications": 0
       }
     },
@@ -140,7 +142,8 @@
       "expect": {
         "conditions": [],
         "extraConditionsAllowed": false,
-        "minClarifications": 1
+        "minClientReviews": 1,
+        "minClarifications": 0
       }
     },
     {
@@ -153,6 +156,38 @@
       "expect": {
         "conditions": [],
         "extraConditionsAllowed": false,
+        "minClientReviews": 1,
+        "minClarifications": 0
+      }
+    },
+    {
+      "id": "landing-demo",
+      "title": "Bakery landing page",
+      "rawText": "Build a one-page landing site for my bakery as index.html. Also include a README. The page should look clean and use warm colours. Pay 30 USDT. Deadline: 30 minutes.",
+      "amountDisplay": "30",
+      "assetTicker": "tUSDT",
+      "deadlineMinutes": 30,
+      "expect": {
+        "conditions": [
+          { "kind": "file_present", "pathPattern": "index.html" },
+          { "kind": "file_present", "pathPattern": "README.md" }
+        ],
+        "extraConditionsAllowed": false,
+        "minClientReviews": 1,
+        "minClarifications": 0
+      }
+    },
+    {
+      "id": "hash-sent-later",
+      "title": "Final logo files",
+      "rawText": "Send me the final logo as logo.svg. It must be exactly the file I'll send you the hash of later. 15 USDT, deadline 1 hour.",
+      "amountDisplay": "15",
+      "assetTicker": "tUSDT",
+      "deadlineMinutes": 60,
+      "expect": {
+        "conditions": [{ "kind": "file_present", "pathPattern": "logo.svg" }],
+        "extraConditionsAllowed": false,
+        "minClientReviews": 0,
         "minClarifications": 1
       }
     }

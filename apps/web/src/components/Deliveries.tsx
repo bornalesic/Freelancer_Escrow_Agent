@@ -1,15 +1,23 @@
-// Every delivery with the verifier's result per condition. Newest first.
+// Every delivery with the verifier's result per condition (and, for client_review conditions, QVAC's
+// opinion and the client's answer). Newest first.
 import type { Delivery, Escrow } from '@escrow/shared';
+import { ReviewResult } from './Review';
 import { ConditionCard } from './Terms';
+import { isClientReview } from '../lib/terms';
 
-function DeliveryCard({ escrow, delivery: d, latest }: { escrow: Escrow; delivery: Delivery; latest: boolean }) {
+type Party = 'client' | 'freelancer';
+
+function DeliveryCard({ escrow, delivery: d, latest, role }: { escrow: Escrow; delivery: Delivery; latest: boolean; role?: Party }) {
   const results = d.results ?? [];
+  const automatic = escrow.conditions.filter((c) => !isClientReview(c));
   const passed = results.filter((r) => r.passed).length;
   const verdict = !d.results
     ? { text: 'Checking…', cls: 'bg-violet-100 text-violet-800' }
-    : passed === escrow.conditions.length
-      ? { text: 'All checks passed', cls: 'bg-emerald-100 text-emerald-800' }
-      : { text: `${passed} of ${escrow.conditions.length} checks passed`, cls: 'bg-red-100 text-red-800' };
+    : passed < automatic.length
+      ? { text: `${passed} of ${automatic.length} checks passed`, cls: 'bg-red-100 text-red-800' }
+      : d.approval?.decision === 'dispute'
+        ? { text: 'Disputed by the client', cls: 'bg-red-100 text-red-800' }
+        : { text: automatic.length ? 'All checks passed' : 'Delivered', cls: 'bg-emerald-100 text-emerald-800' };
 
   return (
     <div className={`space-y-3 rounded-xl border p-4 ${latest ? 'border-slate-300 bg-white' : 'border-slate-200 bg-slate-50 opacity-80'}`}>
@@ -21,6 +29,11 @@ function DeliveryCard({ escrow, delivery: d, latest }: { escrow: Escrow; deliver
         <span className={`rounded-full px-3 py-0.5 text-sm font-semibold ${verdict.cls}`}>{verdict.text}</span>
       </div>
       {escrow.conditions.map((c) => {
+        if (isClientReview(c)) {
+          // only once the automatic checks have all passed does the client review happen
+          if (!d.results || passed < automatic.length) return null;
+          return <ReviewResult key={c.id} escrow={escrow} delivery={d} condition={c} role={role} latest={latest} />;
+        }
         const r = results.find((x) => x.conditionId === c.id);
         const ev = r?.evidence;
         return (
@@ -47,13 +60,13 @@ function DeliveryCard({ escrow, delivery: d, latest }: { escrow: Escrow; deliver
   );
 }
 
-export function Deliveries({ escrow }: { escrow: Escrow }) {
+export function Deliveries({ escrow, role }: { escrow: Escrow; role?: Party }) {
   if (escrow.deliveries.length === 0) return null;
   const list = [...escrow.deliveries].sort((a, b) => b.n - a.n);
   return (
     <div className="space-y-3">
       {list.map((d, i) => (
-        <DeliveryCard key={d.n} escrow={escrow} delivery={d} latest={i === 0} />
+        <DeliveryCard key={d.n} escrow={escrow} delivery={d} latest={i === 0} role={role} />
       ))}
     </div>
   );

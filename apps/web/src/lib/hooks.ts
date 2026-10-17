@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useReducer, useRef, useState } from 'react';
 import type { WsMessage } from '@escrow/shared';
 import { agentWsUrl, config } from '../config';
-import { fixtureEscrow, fixtureEvents } from '../fixtures/snapshot';
+import { fixtureViews } from '../fixtures/snapshot';
 import { agentApi } from './api';
 import { emptyStream, streamReducer, type StreamState } from './escrowStore';
 import { errorMessage } from './http';
@@ -70,7 +70,9 @@ export function useEscrowStream(escrowId?: string): { state: StreamState; status
 
   useEffect(() => {
     if (config.fixture) {
-      dispatch({ kind: 'snapshot', escrow: fixtureEscrow, events: fixtureEvents });
+      for (const v of fixtureViews) {
+        if (!escrowId || v.escrow.id === escrowId) dispatch({ kind: 'snapshot', ...v });
+      }
       return;
     }
 

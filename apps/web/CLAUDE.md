@@ -72,6 +72,8 @@ for agent / party / AI (from `/health`), and a clear error banner instead of bla
 7. Client review (branch `New_Rules`, after the contract change lands): `client_review` cards, client
    review screen, freelancer waiting state, projector chip; add an `AWAITING_APPROVAL` escrow with a
    review to `src/fixtures/snapshot.ts`; prepare the `landing` fixture deliverable (`fixtures/README.md`).
+   Done: `components/Review.tsx` (files viewer, AI opinion, Approve/Dispute), `lib/clientToken.ts`; fixture
+   `?fixture=1&escrow=esc_b4k3`. Tested end to end against the real agent (dispute → v2 → approve, and expiry).
 
 ## Running it
 - `npm run dev:web` → http://localhost:5173/{client,freelancer,agent} (listens on 0.0.0.0 for the LAN).
@@ -80,14 +82,21 @@ for agent / party / AI (from `/health`), and a clear error banner instead of bla
   sessionStorage. `/agent` shows both parties' balances from `CLIENT_PARTY_URL` / `FREELANCER_PARTY_URL`
   (exposed via `envPrefix`) or `?client=` / `?freelancer=`.
 - VITE_* vars are read from the **repo-root** `.env` / `.env.local` (`envDir: '../..'`).
-- `@escrow/shared` resolves to `src/shared-shim.ts` until `packages/shared/src/index.ts` exists, then to the
-  real package automatically (alias in `vite.config.ts`, `vitest.config.ts`, `tsconfig.json`). Delete the
-  shim and the aliases once shared is on main.
+- `@escrow/shared` is a normal workspace dependency (TS sources, hence `allowImportingTsExtensions`). Paths
+  come from `AGENT_ROUTES` / `PARTY_ROUTES`. Before Accept, the UI recomputes `termsHash` from the terms on
+  screen (`lib/terms.ts`) and refuses to accept on a mismatch.
+- Against the real agent without WS1's party servers: `WALLET_MODE=mock npm run dev:agent` (StubWallet:
+  `POST /funded` simulates the payment) plus fake parties on :4101/:4102 that return invoices/txids.
 
 ## Learned the hard way
 - Emoji don't render in every environment (headless Linux shows empty boxes). Actor icons are inline SVG.
 - A smooth `scrollTo` fires `scroll` events mid-animation; the decision log only unpins auto-scroll when
   the viewer scrolls *up*, and follows content growth with a ResizeObserver (covers streamed tokens).
+- `pgrep -f`/`pkill -f` with a pattern also matches your own shell's command line and kills it. Kill by PID.
+- `Waiting` (and any `flex` row) turns every text node into its own flex item; wrap mixed text + elements in
+  one `<span>` or they wrap as separate columns.
+- A CSS grid `1fr` column never shrinks below its content: the verifier's long stdout lines pushed the
+  wallet card off-screen. Use `minmax(0,1fr)` for content columns.
 - `vite` uses `strictPort`: if 5173 is "in use", an old dev server is still running (`pgrep -af vite`).
 
 ## Done when
