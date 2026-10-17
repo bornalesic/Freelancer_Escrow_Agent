@@ -31,7 +31,7 @@ npm run eval:explain -w apps/ai         # the demo's event sequence through /exp
 `src/index.ts` entry · `server.ts` routes/SSE · `llm.ts` QVAC engine (lazy import, priority limiter, cancel on
 timeout) · `parse.ts` model → retry → fallback · `postprocess.ts` guards + cross-check · `fallback.ts`
 deterministic parser · `explain.ts` + `facts.ts` + `templates.ts` explanations · `review.ts` advisory review
-(planned) · `prompts.ts` versioned prompts · `mock.ts` AI_MODE=mock · `evalCheck.ts` eval scoring. Probes
+· `glob.ts` path-pattern matching · `prompts.ts` versioned prompts · `mock.ts` AI_MODE=mock · `evalCheck.ts` eval scoring. Probes
 live in `scratch/` (git-ignored).
 
 ## What `/explain` reads from `event.data` (tell WS3)
@@ -41,8 +41,11 @@ the failing test name is parsed from `evidence.stdoutTail`), `results` (`Verific
 `verify.finished`), `decision` (the `Decision`, for `decision.made`), `txid`, `amount` (base units, if not the
 escrow amount), `message` (for `error`). The SSE `done` message's `text` is **authoritative**: it can differ
 from the streamed deltas when a guard swaps in the template, so the agent must replace, not append.
-Client review (planned): `decision` with `action: 'await_approval'` and `pending` (the `client_review` ids);
-`deliveryN` + `reason` (for `review.disputed`); `deliveryN` + `reviewDueAt` (for `review.expired`).
+Checked against `apps/agent/src/orchestrator.ts` on `main`: the agent sends the delivery number as `delivery`
+(also accepted: `n`, `deliveryN`), spreads the `Decision` at the top of `decision.made` data (`action`,
+`reason`, `pending`), sends `passed` + `total` for `verify.finished`, and for `error` sends the plain-English
+message as the title (raw error in `detail`, which we ignore on purpose). `review.report_ready` counts come
+from `delivery.review` in the escrow, which the agent stores before recording the event.
 Explanations must never quote the AI review's opinions as if they were the decision.
 
 ## Model constants

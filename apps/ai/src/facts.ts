@@ -5,7 +5,7 @@ import { formatAmount, isAutomaticCondition, type Condition, type Delivery, type
  * templates and the LLM prompt see exactly the same data (and the LLM never sees invoices or raw logs).
  *
  * `event.data` keys we understand (all optional; WS3 decides what to send):
- *   role, amount (base units), n / deliveryN / fileName, conditionId, passed, evidence,
+ *   role, amount (base units), n / delivery / deliveryN / fileName, conditionId, passed, evidence,
  *   result (VerificationResult), results (VerificationResult[]), failedTests (string[]),
  *   decision (Decision) or action + reason, failed / pending (condition ids), reason (dispute), txid,
  *   message / error.
@@ -117,7 +117,7 @@ export function buildFacts(event: LogEvent, escrow: Escrow): EventFacts {
   const role = str(data.role) ?? (event.actor === 'client' || event.actor === 'freelancer' ? event.actor : undefined);
   if (role && ['terms.accepted', 'escrow.cancelled', 'delivery.received'].includes(event.type)) facts.role = role;
 
-  const n = num(data.n) ?? num(data.deliveryN) ?? escrow.deliveries.at(-1)?.n;
+  const n = num(data.n) ?? num(data.delivery) ?? num(data.deliveryN) ?? escrow.deliveries.at(-1)?.n;
   const delivery = n !== undefined ? escrow.deliveries.find((d) => d.n === n) : undefined;
   if (DELIVERY_EVENTS.test(event.type) && n !== undefined) {
     facts.delivery = { n, fileName: str(data.fileName) ?? delivery?.fileName };
