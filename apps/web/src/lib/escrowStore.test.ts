@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { LogEvent } from '@escrow/shared';
 import { fixtureEscrow, fixtureEvents } from '../fixtures/snapshot';
-import { emptyStream, pickEscrow, streamReducer } from './escrowStore';
+import { currentProblem, emptyStream, pickEscrow, streamReducer } from './escrowStore';
 
 const snap = streamReducer(emptyStream, { kind: 'snapshot', escrow: fixtureEscrow, events: fixtureEvents });
 const id = fixtureEscrow.id;
@@ -56,5 +56,32 @@ describe('pickEscrow', () => {
     const s = streamReducer(snap, { kind: 'escrow', escrow: other });
     expect(pickEscrow(s)?.escrow.id).toBe(id);
     expect(pickEscrow(s, 'esc_0000')?.escrow.id).toBe('esc_0000');
+  });
+});
+
+describe('currentProblem', () => {
+  const releasing = { ...fixtureEscrow, state: 'RELEASING' as const, updatedAt: '2026-10-17T10:10:00.000Z' };
+  const error = (at: string, state = 'RELEASING'): LogEvent => ({
+    id: `${id}:0100`,
+    escrowId: id,
+    at,
+    actor: 'wallet',
+    type: 'error',
+    title: 'The payout transfer failed; the agent will try again',
+    data: { state },
+    explain: true,
+  });
+
+  it('shows an error logged in the current state after the last change', () => {
+    const e = error('2026-10-17T10:11:00.000Z');
+    expect(currentProblem({ escrow: releasing, events: [...fixtureEvents, e] })).toBe(e);
+  });
+
+  it('hides it once the escrow changed, moved on, or closed', () => {
+    const e = error('2026-10-17T10:09:00.000Z');
+    expect(currentProblem({ escrow: releasing, events: [e] })).toBeUndefined(); // changed since
+    expect(currentProblem({ escrow: releasing, events: [error('2026-10-17T10:11:00.000Z', 'FUNDED')] })).toBeUndefined();
+    expect(currentProblem({ escrow: { ...releasing, state: 'RELEASED' }, events: [error('2026-10-17T10:11:00.000Z', 'RELEASED')] })).toBeUndefined();
+    expect(currentProblem({ escrow: releasing, events: fixtureEvents })).toBeUndefined();
   });
 });

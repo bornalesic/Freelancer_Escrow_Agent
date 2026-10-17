@@ -11,6 +11,9 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
   },
+  "dependencies": {
+    "@escrow/shared": "*"
+  },
   "devDependencies": {
     "@types/node": "^22.10.0"
   }

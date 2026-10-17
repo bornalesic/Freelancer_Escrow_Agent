@@ -28,7 +28,7 @@ function Badges() {
     <div className="flex flex-wrap gap-3 text-lg font-medium text-slate-700">
       <span className="rounded-full bg-orange-100 px-4 py-1">RGB on Bitcoin · {network}</span>
       <span className="rounded-full bg-teal-100 px-4 py-1">Self-custodial · Tether WDK wallet</span>
-      <span className="rounded-full bg-violet-100 px-4 py-1">{model ? `QVAC ${modelLabel(model)} · on-device` : 'QVAC · on-device'}</span>
+      <span className="rounded-full bg-violet-100 px-4 py-1">{!model ? 'QVAC · on-device' : model === 'mock' ? 'QVAC · mock mode' : `QVAC ${modelLabel(model)} · on-device`}</span>
     </div>
   );
 }
