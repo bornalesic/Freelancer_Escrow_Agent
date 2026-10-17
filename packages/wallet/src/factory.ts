@@ -7,11 +7,9 @@
 // Config comes only from env vars listed in .env.example (root CLAUDE.md). Nothing here logs a
 // mnemonic, and nothing here hard-codes a host, port, network or asset id.
 
-import type { EscrowWallet, Role } from './contract-types.ts'
+import type { EscrowWallet, Role, WalletMode } from './contract-types.ts'
 import { MockWallet, WalletError } from './mock-wallet.ts'
 import { resolveLedgerPath, type LedgerHandle, type LedgerSeed } from './ledger.ts'
-
-export type WalletMode = 'mock' | 'real'
 
 export interface CreateWalletParams {
   role: Role
