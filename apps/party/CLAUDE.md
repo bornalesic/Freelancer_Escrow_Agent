@@ -26,3 +26,25 @@ Env: `ROLE`, `PARTY_PORT`, `WALLET_MODE`, `RGB_*` (see `.env.example`), `<ROLE>_
 ## Done when
 With `WALLET_MODE=mock`, two instances (client + freelancer) and the agent can complete the whole flow
 from the UI. With `WALLET_MODE=real`, the same works on regtest across two laptops.
+
+## Status (mock mode done; `npm test -w apps/party`: 9 tests)
+Tasks 1–5 are implemented: `src/app.ts` (routes), `src/wallet.ts` (create + init with retry every 15 s,
+timeout on every call), `src/refresh-loop.ts`, `src/config.ts`, `src/server.ts`. Verified end to end
+with real processes (agent + both party servers, `WALLET_MODE=mock`): create → accept ×2 → the client
+pays the funding invoice from its party server → agent `FUNDED`; balances client 100 → 90, agent 0 → 10.
+Remaining: `WALLET_MODE=real` once `RgbWdkWallet` lands in `packages/wallet`.
+
+## Learned the hard way
+- **"Refresh only while pending" is not enough for a receiver.** A wallet's first invoice for an asset
+  is unbound, and its incoming transfer may not be listed under that asset until a refresh pulls the
+  consignment in, so a pending-only loop could wait forever. The loop also keeps refreshing until each
+  invoice this server handed out expires (`RefreshLoop.watchInvoice`, monotonic deadline).
+- `GET /wallet/transfers?assetId=` has no query schema in `@escrow/shared`; it is validated locally
+  (`TransfersQuerySchema` in `src/app.ts`). Candidate for the next contract change.
+- **Tests need Node ≥ 22.12.** Fastify's `inject()` loads `light-my-request`, whose `cookie@2` is
+  ESM-only; on Node 20 every test fails with "require() of ES Module ... not supported". In WSL, nvm's
+  Node only loads in interactive shells: `bash -ic` gets Node 22, `bash -lc` got the system Node 20.
+- **Run git inside WSL, never Windows Git for Windows on the `\\wsl$` / `Z:` checkout.** Its
+  `core.autocrlf=true` writes every file it checks out with CRLF, so WSL git then shows dozens of other
+  workstreams' files as modified. Fix if it happens: in WSL, check `git diff --ignore-cr-at-eol --stat`
+  shows no real changes, then `git checkout -- <those files>`.

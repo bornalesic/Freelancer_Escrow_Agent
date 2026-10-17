@@ -1,0 +1,23 @@
+{
+  "name": "@escrow/party",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev:client": "cross-env ROLE=client PARTY_PORT=4101 tsx watch --clear-screen=false src/server.ts",
+    "dev:freelancer": "cross-env ROLE=freelancer PARTY_PORT=4102 tsx watch --clear-screen=false src/server.ts",
+    "start": "tsx src/server.ts",
+    "typecheck": "tsc --noEmit -p .",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@escrow/shared": "*",
+    "@escrow/wallet": "*",
+    "@fastify/cors": "^11.0.0",
+    "fastify": "^5.2.0",
+    "zod": "^4.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0"
+  }
+}
