@@ -2,15 +2,16 @@
 import type { ReactNode } from 'react';
 import { formatAmount, type Escrow, type EscrowState, type LogEvent } from '@escrow/shared';
 import { agentApi } from '../lib/api';
-import { isClosed, type EscrowView } from '../lib/escrowStore';
+import { currentProblem, isClosed, type EscrowView } from '../lib/escrowStore';
 import { useAction } from '../lib/hooks';
 import { Explanation } from './DecisionLog';
 import { Deliveries } from './Deliveries';
+import { EditAgreement } from './EditAgreement';
 import { FundingPanel } from './FundingPanel';
 import { latestDelivery, ReviewPanel } from './Review';
 import { StateTimeline } from './StateTimeline';
-import { AcceptanceStatus, AcceptButton, TermsView } from './Terms';
 import { isClientReview } from '../lib/terms';
+import { AcceptanceStatus, AcceptButton, TermsView } from './Terms';
 import { UploadPanel } from './UploadPanel';
 import { Card, Countdown, ErrorBanner, ReviewCountdown, Spinner, StateChip } from './ui';
 import { WalletCard } from './WalletCard';
@@ -73,8 +74,23 @@ function NextStep({ escrow, events, role }: { escrow: Escrow; events: LogEvent[]
   switch (escrow.state) {
     case 'DRAFT':
       return <Waiting>QVAC is turning the agreement into checks…</Waiting>;
-    case 'PROPOSED':
-      return <AcceptButton escrow={escrow} role={role} />;
+    case 'PROPOSED': {
+      // The agent refuses to accept terms without any checks: the agreement must be edited first.
+      const empty = escrow.conditions.length === 0;
+      return (
+        <div className="space-y-3">
+          {empty ? (
+            <p className="rounded-xl border border-amber-200 bg-amber-50 px-5 py-4 text-amber-900">
+              QVAC found nothing to check in this agreement.{' '}
+              {role === 'client' ? 'Edit it to say what must be delivered.' : 'Waiting for the client to edit it.'}
+            </p>
+          ) : (
+            <AcceptButton escrow={escrow} role={role} />
+          )}
+          {role === 'client' && <EditAgreement key={escrow.rawText} escrow={escrow} startOpen={empty} />}
+        </div>
+      );
+    }
     case 'AGREED':
     case 'AWAITING_FUNDS':
       return role === 'client' ? (
@@ -127,6 +143,18 @@ function NextStep({ escrow, events, role }: { escrow: Escrow; events: LogEvent[]
   }
 }
 
+/** A step that is failing right now (payout, refund, funding...), so nobody waits on a spinner. */
+function CurrentProblem({ view }: { view: EscrowView }) {
+  const e = currentProblem(view);
+  if (!e) return null;
+  return (
+    <div role="alert" className="rounded-xl border border-red-300 bg-red-50 px-5 py-4">
+      <p className="font-semibold text-red-900">{e.title}</p>
+      {e.explain && <Explanation event={e} />}
+    </div>
+  );
+}
+
 function LatestDecision({ events }: { events: LogEvent[] }) {
   const e = events.findLast((x) => x.type === 'decision.made');
   if (!e) return null;
@@ -164,6 +192,7 @@ export function EscrowPanel({ view, role, onNew }: { view: EscrowView; role: Par
               </div>
               <StateChip state={escrow.state} large />
             </div>
+            <CurrentProblem view={view} />
             <NextStep escrow={escrow} events={events} role={role} />
             {cancel.error && <ErrorBanner>{cancel.error}</ErrorBanner>}
           </div>

@@ -85,8 +85,13 @@ for agent / party / AI (from `/health`), and a clear error banner instead of bla
 - `@escrow/shared` is a normal workspace dependency (TS sources, hence `allowImportingTsExtensions`). Paths
   come from `AGENT_ROUTES` / `PARTY_ROUTES`. Before Accept, the UI recomputes `termsHash` from the terms on
   screen (`lib/terms.ts`) and refuses to accept on a mismatch.
-- Against the real agent without WS1's party servers: `WALLET_MODE=mock npm run dev:agent` (StubWallet:
-  `POST /funded` simulates the payment) plus fake parties on :4101/:4102 that return invoices/txids.
+- Client, in "Terms proposed": **Edit agreement** re-sends the text to `/reparse` (agent goes back to DRAFT,
+  acceptances cleared). With zero conditions the Accept button is replaced by "QVAC found nothing to check"
+  and the edit box opens by itself (the agent refuses to accept empty terms).
+- Party screens show the agent's latest `error` as a red banner while the escrow is stuck on that step
+  (`currentProblem()` in `lib/escrowStore.ts`: logged in the current state, nothing changed since).
+- Projector badge: `QVAC <model> · on-device` from the agent's `/health` `aiModel`; `QVAC · mock mode`
+  when the AI runs with `AI_MODE=mock`.
 
 ## Learned the hard way
 - Emoji don't render in every environment (headless Linux shows empty boxes). Actor icons are inline SVG.
