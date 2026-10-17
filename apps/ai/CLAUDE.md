@@ -172,7 +172,7 @@ Client review (tasks 7–9) implemented on WS3's contract: parse-v3 (`review` qu
 `unclear` quotes → clarifications), `POST /review` (fenced excerpts, injection guard, file/colour grounding,
 template fallback, mock mirrors the demo), templates for the `review.*` events, `await_approval` and
 `terms.reparse_requested`. `fixtures/agreements.json` is WS4's format, 17 cases; the fallback parser alone
-passes all 17. `dinamo-shop-placeholder` is a stand-in until the real Dinamo agreement text is added.
+passes all 17.
 
 ## Learned the hard way
 - Qwen3.5 structured output needs `reasoning_budget: 0`; `/no_think` is not enough (see API facts).

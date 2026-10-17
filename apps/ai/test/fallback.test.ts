@@ -33,7 +33,7 @@ describe('fallbackParse', () => {
   });
 
   it('turns required features into client_review conditions (web shops used to return nothing)', () => {
-    for (const id of ['sunglasses-shop', 'dinamo-shop-placeholder']) {
+    for (const id of ['sunglasses-shop', 'dinamo-shop']) {
       const r = fallbackParse(req(id));
       expect(r.conditions.length, id).toBeGreaterThan(0);
       expect(r.conditions.every((c) => c.kind === 'client_review'), id).toBe(true);

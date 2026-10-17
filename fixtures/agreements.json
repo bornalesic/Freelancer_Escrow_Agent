@@ -1,5 +1,5 @@
 {
-  "$comment": "Eval set for apps/ai /parse (WS2). Each case builds a ParseRequest: deadline = now + deadlineMinutes. `expect.conditions` are partial matches: every listed condition must appear (match on kind + the listed fields; description/id/timeoutSec are free; pathPattern compares as a glob both ways, so README* matches README.md). `expect.extraConditionsAllowed` false = no other conditions. `expect.minClarifications` = at least this many clarifications. With client review, subjective wishes become client_review conditions; clarifications are only for things that can't be agreed yet. Cases 1-10 by WS4, 11-15 added by WS2 for guard regressions and the landing demo, 16-17 web shops that used to return no conditions. dinamo-shop-placeholder is a stand-in text: replace it with the real Dinamo agreement.",
+  "$comment": "Eval set for apps/ai /parse (WS2). Each case builds a ParseRequest: deadline = now + deadlineMinutes. `expect.conditions` are partial matches: every listed condition must appear (match on kind + the listed fields; description/id/timeoutSec are free; pathPattern compares as a glob both ways, so README* matches README.md). `expect.extraConditionsAllowed` false = no other conditions. `expect.minClarifications` = at least this many clarifications. With client review, subjective wishes become client_review conditions; clarifications are only for things that can't be agreed yet. Cases 1-10 by WS4, 11-15 added by WS2 for guard regressions and the landing demo, 16-17 web shops that used to return no conditions.",
   "cases": [
     {
       "id": "slugify-demo",
@@ -251,7 +251,7 @@
       }
     },
     {
-      "id": "dinamo-shop-placeholder",
+      "id": "dinamo-shop",
       "title": "Dinamo fan web shop",
       "rawText": "Build a web shop for Dinamo fan merchandise. It needs product pages for jerseys and scarves, a shopping cart and a checkout. Pay 800 USDT, deadline in two weeks.",
       "amountDisplay": "800",
