@@ -16,18 +16,22 @@ const STEPS: Step[] = [
   { label: 'Freelancer paid', states: ['RELEASING', 'RELEASED'] },
 ];
 
+// Only for terms with a client_review condition: the client approves after the automatic checks.
+const REVIEW_STEP: Step = { label: 'Client approved', states: ['AWAITING_APPROVAL'] };
+
 const REFUND_STEP: Step = { label: 'Client refunded', states: ['REFUNDING', 'REFUNDED'] };
 const CANCEL_STEP: Step = { label: 'Cancelled', states: ['CANCELLED'] };
 
 const DONE: EscrowState[] = ['RELEASED', 'REFUNDED', 'CANCELLED'];
 
-export function StateTimeline({ state, large = false }: { state: EscrowState; large?: boolean }) {
+export function StateTimeline({ state, review = false, large = false }: { state: EscrowState; review?: boolean; large?: boolean }) {
+  const happy = review ? [...STEPS.slice(0, 5), REVIEW_STEP, STEPS[5]] : STEPS;
   const steps =
     state === 'REFUNDING' || state === 'REFUNDED'
       ? [...STEPS.slice(0, 4), REFUND_STEP]
       : state === 'CANCELLED'
         ? [...STEPS.slice(0, 2), CANCEL_STEP]
-        : STEPS;
+        : happy;
   const current = steps.findIndex((s) => s.states.includes(state));
   const finished = DONE.includes(state);
   // Waiting for money (AWAITING_FUNDS) is the "Money locked" step in progress; FUNDED completes it.

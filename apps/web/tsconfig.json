@@ -12,10 +12,8 @@
     "isolatedModules": true,
     "skipLibCheck": true,
     "noEmit": true,
-    "types": ["vite/client", "node"],
-    "paths": {
-      "@escrow/shared": ["../../packages/shared/src/index.ts", "./src/shared-shim.ts"]
-    }
+    "allowImportingTsExtensions": true,
+    "types": ["vite/client", "node"]
   },
   "include": ["src", "vite.config.ts", "vitest.config.ts"]
 }

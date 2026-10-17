@@ -43,12 +43,16 @@ function tone(e: LogEvent): string {
     const action = e.data?.action;
     if (action === 'release') return 'border-l-emerald-500 bg-emerald-50';
     if (action === 'refund') return 'border-l-orange-500 bg-orange-50';
+    if (action === 'await_approval') return 'border-l-sky-500 bg-sky-50';
     return 'border-l-amber-500 bg-amber-50';
   }
   if (e.type === 'payout.settled' || e.type === 'funding.settled' || e.type === 'terms.agreed') {
     return 'border-l-emerald-500 bg-white';
   }
   if (e.type === 'refund.settled') return 'border-l-orange-500 bg-white';
+  if (e.type === 'review.report_ready') return 'border-l-violet-500 bg-white';
+  if (e.type === 'review.approved' || e.type === 'review.expired') return 'border-l-emerald-500 bg-white';
+  if (e.type === 'review.disputed') return 'border-l-red-500 bg-red-50';
   if (e.type === 'verify.condition_result') return e.data?.passed === false ? 'border-l-red-400 bg-white' : 'border-l-slate-200 bg-white';
   return 'border-l-slate-200 bg-white';
 }

@@ -44,7 +44,7 @@ export function FreelancerView() {
         {view ? (
           <EscrowPanel view={view} role="freelancer" />
         ) : (
-          <div className="grid items-start gap-6 lg:grid-cols-[1fr_320px]">
+          <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
             <Card>
               <Empty>No jobs yet. A job appears here as soon as a client writes an agreement.</Empty>
             </Card>

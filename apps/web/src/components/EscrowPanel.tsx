@@ -7,10 +7,12 @@ import { useAction } from '../lib/hooks';
 import { Explanation } from './DecisionLog';
 import { Deliveries } from './Deliveries';
 import { FundingPanel } from './FundingPanel';
+import { latestDelivery, ReviewPanel } from './Review';
 import { StateTimeline } from './StateTimeline';
 import { AcceptanceStatus, AcceptButton, TermsView } from './Terms';
+import { isClientReview } from '../lib/terms';
 import { UploadPanel } from './UploadPanel';
-import { Card, Countdown, ErrorBanner, Spinner, StateChip } from './ui';
+import { Card, Countdown, ErrorBanner, ReviewCountdown, Spinner, StateChip } from './ui';
 import { WalletCard } from './WalletCard';
 
 type Party = 'client' | 'freelancer';
@@ -21,16 +23,25 @@ function Waiting({ children }: { children: ReactNode }) {
   return (
     <p className="flex items-center gap-3 rounded-xl bg-slate-100 px-5 py-4 text-lg text-slate-700">
       <Spinner />
-      {children}
+      <span>{children}</span>
     </p>
   );
 }
 
+/** Why the money is moving, in one short sentence. */
+function releaseReason(escrow: Escrow): string {
+  const d = latestDelivery(escrow);
+  if (d?.approval?.decision === 'approve') return 'The client approved.';
+  if (d?.reviewDueAt && !d.approval) return "The client didn't answer in time.";
+  return 'All checks passed.';
+}
+
 function Outcome({ escrow, role }: { escrow: Escrow; role: Party }) {
   const amount = `${formatAmount(escrow.amount, escrow.precision)} ${escrow.assetTicker}`;
+  const disputed = latestDelivery(escrow)?.approval?.decision === 'dispute';
   switch (escrow.state) {
     case 'RELEASING':
-      return <Waiting>All checks passed. Paying {amount} to the freelancer…</Waiting>;
+      return <Waiting>{releaseReason(escrow)} Paying {amount} to the freelancer…</Waiting>;
     case 'RELEASED':
       return (
         <p className="rounded-xl bg-emerald-600 px-5 py-4 text-xl font-semibold text-white">
@@ -38,7 +49,12 @@ function Outcome({ escrow, role }: { escrow: Escrow; role: Party }) {
         </p>
       );
     case 'REFUNDING':
-      return <Waiting>Deadline passed without a passing delivery. Refunding {amount} to the client…</Waiting>;
+      return (
+        <Waiting>
+          {disputed ? 'The client disputed and the deadline has passed.' : 'Deadline passed without a passing delivery.'} Refunding{' '}
+          {amount} to the client…
+        </Waiting>
+      );
     case 'REFUNDED':
       return (
         <p className="rounded-xl bg-orange-600 px-5 py-4 text-xl font-semibold text-white">
@@ -66,9 +82,16 @@ function NextStep({ escrow, events, role }: { escrow: Escrow; events: LogEvent[]
       ) : (
         <Waiting>Both sides agreed. Waiting for the client to lock the money…</Waiting>
       );
-    case 'FUNDED':
+    case 'FUNDED': {
+      const dispute = latestDelivery(escrow)?.approval;
       return role === 'freelancer' ? (
         <div className="space-y-2">
+          {dispute?.decision === 'dispute' && (
+            <div className="rounded-xl border border-red-200 bg-red-50 px-5 py-4">
+              <p className="font-semibold text-red-900">The client disputed your last delivery:</p>
+              <p className="mt-1 text-lg text-red-800">“{dispute.reason}”</p>
+            </div>
+          )}
           <p className="text-lg font-medium text-teal-800">
             The money is locked. Upload your work{escrow.deliveries.length ? ' again' : ''} before the deadline.
           </p>
@@ -76,12 +99,29 @@ function NextStep({ escrow, events, role }: { escrow: Escrow; events: LogEvent[]
         </div>
       ) : (
         <Waiting>
-          The money is locked. Waiting for the freelancer to {escrow.deliveries.length ? 'upload a fixed version' : 'deliver'}…
+          {dispute?.decision === 'dispute' ? 'You disputed the delivery. ' : 'The money is locked. '}
+          Waiting for the freelancer to {escrow.deliveries.length ? 'upload a fixed version' : 'deliver'}…
         </Waiting>
       );
+    }
     case 'DELIVERED':
     case 'VERIFYING':
       return <Waiting>Checking the delivery…</Waiting>;
+    case 'AWAITING_APPROVAL': {
+      if (role === 'client') return <ReviewPanel escrow={escrow} />;
+      const due = latestDelivery(escrow)?.reviewDueAt;
+      return (
+        <Waiting>
+          All automatic checks passed. Waiting for the client's review
+          {due && (
+            <>
+              {' '}
+              · <ReviewCountdown dueAt={due} />
+            </>
+          )}
+        </Waiting>
+      );
+    }
     default:
       return <Outcome escrow={escrow} role={role} />;
   }
@@ -104,7 +144,7 @@ export function EscrowPanel({ view, role, onNew }: { view: EscrowView; role: Par
   const showTerms = escrow.state !== 'DRAFT';
 
   return (
-    <div className="grid items-start gap-6 lg:grid-cols-[1fr_320px]">
+    <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
       <div className="space-y-6">
         <Card>
           <div className="space-y-4">
@@ -133,7 +173,7 @@ export function EscrowPanel({ view, role, onNew }: { view: EscrowView; role: Par
           <Card title="Deliveries">
             <div className="space-y-4">
               <LatestDecision events={events} />
-              <Deliveries escrow={escrow} />
+              <Deliveries escrow={escrow} role={role} />
             </div>
           </Card>
         )}
@@ -142,7 +182,7 @@ export function EscrowPanel({ view, role, onNew }: { view: EscrowView; role: Par
           <Card title={escrow.state === 'PROPOSED' ? 'Proposed terms' : 'Terms'}>
             <div className="space-y-4">
               <AcceptanceStatus escrow={escrow} />
-              <TermsView escrow={escrow} />
+              <TermsView escrow={escrow} role={role} />
               <details className="text-sm text-slate-500">
                 <summary className="cursor-pointer">Original agreement</summary>
                 <p className="mt-2 whitespace-pre-wrap rounded-lg bg-slate-50 p-3 text-slate-700">{escrow.rawText}</p>
@@ -155,7 +195,7 @@ export function EscrowPanel({ view, role, onNew }: { view: EscrowView; role: Par
       <div className="space-y-6">
         <WalletCard />
         <Card title="Progress">
-          <StateTimeline state={escrow.state} />
+          <StateTimeline state={escrow.state} review={escrow.conditions.some(isClientReview)} />
         </Card>
         <div className="flex flex-wrap gap-2">
           {onNew && (
