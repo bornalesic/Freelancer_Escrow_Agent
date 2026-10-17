@@ -1,6 +1,7 @@
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
@@ -11,7 +12,7 @@ import {
   formatMockInvoice,
   parseMockInvoice,
 } from '../src/mock-wallet.ts'
-import type { LedgerHandle } from '../src/ledger.ts'
+import { resolveLedgerPath, type LedgerHandle } from '../src/ledger.ts'
 
 // A realistic asset id: it contains a colon of its own, which is the thing that makes the invoice
 // format non-trivial to parse. Taken from the real regtest rehearsal.
@@ -466,5 +467,22 @@ describe('ledger file', () => {
     writeFileSync(ledger.path, JSON.stringify(bad), 'utf8')
 
     await expect(client.balance(ASSET)).rejects.toThrow(/version 99/)
+  })
+})
+
+describe('ledger path', () => {
+  const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../../..')
+
+  // `npm run -w apps/agent` and `npm run -w apps/party` start in different folders. A cwd-relative
+  // path would give each process its own ledger, and payments would never cross between them.
+  it('resolves a relative MOCK_LEDGER_PATH against the repo root, not the cwd', () => {
+    expect(resolveLedgerPath('./.mock-ledger.json')).toBe(join(repoRoot, '.mock-ledger.json'))
+    expect(resolveLedgerPath(undefined)).toBe(join(repoRoot, '.mock-ledger.json'))
+    expect(resolveLedgerPath('  ')).toBe(join(repoRoot, '.mock-ledger.json'))
+  })
+
+  it('leaves an absolute path alone', () => {
+    const abs = join(tmpdir(), 'elsewhere', '.mock-ledger.json')
+    expect(resolveLedgerPath(abs)).toBe(abs)
   })
 })
