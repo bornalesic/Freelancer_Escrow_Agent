@@ -11,6 +11,7 @@
     "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
+    "@escrow/ai": "*",
     "@escrow/shared": "*",
     "@fastify/cors": "^11.0.0",
     "@fastify/multipart": "^9.0.0",

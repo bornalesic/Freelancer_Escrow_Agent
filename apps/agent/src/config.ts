@@ -76,7 +76,7 @@ export function loadConfig(env: Env = process.env): Config {
     reviewWindowSec: num(env, 'REVIEW_WINDOW_SEC', 120),
     network: str(env, 'RGB_NETWORK') ?? 'regtest',
     assetId,
-    assetTicker: str(env, 'ESCROW_ASSET_TICKER') ?? 'tUSDT',
+    assetTicker: str(env, 'ESCROW_ASSET_TICKER') ?? 'TUSDT', // rgb-lib only accepts upper-case tickers
     precision: num(env, 'ESCROW_ASSET_PRECISION', 6),
     walletPollMs: num(env, 'WALLET_POLL_MS', 2000),
     mockSettleMs: num(env, 'MOCK_SETTLE_MS', 3000),
