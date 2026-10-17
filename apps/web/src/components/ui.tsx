@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import type { EscrowState } from '@escrow/shared';
 
 export function ErrorBanner({ children }: { children: ReactNode }) {
@@ -60,4 +60,24 @@ export function StateChip({ state, large = false }: { state: EscrowState; large?
 
 export function Empty({ children }: { children: ReactNode }) {
   return <p className="py-8 text-center text-slate-500">{children}</p>;
+}
+
+export function Countdown({ deadline }: { deadline: string }) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 1_000);
+    return () => clearInterval(t);
+  }, []);
+  const left = Math.max(0, Date.parse(deadline) - now);
+  const m = Math.floor(left / 60_000);
+  const s = Math.floor((left % 60_000) / 1_000);
+  return (
+    <span className={`tabular-nums ${left === 0 ? 'text-red-600' : ''}`}>
+      {left === 0 ? 'Deadline passed' : `${m}:${String(s).padStart(2, '0')} left`}
+    </span>
+  );
+}
+
+export function Spinner() {
+  return <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-current border-r-transparent" aria-hidden />;
 }

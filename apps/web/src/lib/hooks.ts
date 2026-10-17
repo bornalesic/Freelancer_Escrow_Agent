@@ -1,4 +1,4 @@
-import { useEffect, useReducer, useRef, useState } from 'react';
+import { useCallback, useEffect, useReducer, useRef, useState } from 'react';
 import type { WsMessage } from '@escrow/shared';
 import { agentWsUrl, config } from '../config';
 import { fixtureEscrow, fixtureEvents } from '../fixtures/snapshot';
@@ -116,3 +116,24 @@ export function useEscrowStream(escrowId?: string): { state: StreamState; status
   return { state, status };
 }
 
+
+/** Wraps an async action with busy/error state for buttons. */
+export function useAction<A extends unknown[]>(fn: (...args: A) => Promise<unknown>) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string>();
+  const run = useCallback(
+    async (...args: A) => {
+      setBusy(true);
+      setError(undefined);
+      try {
+        await fn(...args);
+      } catch (err) {
+        setError(errorMessage(err));
+      } finally {
+        setBusy(false);
+      }
+    },
+    [fn],
+  );
+  return { run, busy, error };
+}
