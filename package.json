@@ -20,7 +20,8 @@
     "test": "npm run test --workspaces --if-present",
     "setup:role": "tsx scripts/setup-role.ts",
     "demo:setup": "tsx scripts/setup-demo.ts",
-    "demo:reset": "tsx scripts/reset-demo.ts"
+    "demo:reset": "tsx scripts/reset-demo.ts",
+    "fixtures:zip": "node fixtures/zip.mjs"
   },
   "devDependencies": {
     "concurrently": "^9.0.0",

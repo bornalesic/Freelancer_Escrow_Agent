@@ -7,7 +7,8 @@ Speed matters, but **a working end-to-end demo beats any feature**.
 A freelancer escrow agent. Client and freelancer agree on a job in plain language; local AI (QVAC)
 turns it into machine-checkable conditions; both approve; the client locks test-USDT (an RGB asset on
 Bitcoin) in the agent's Tether WDK wallet; the freelancer uploads the work; a deterministic verifier
-runs the checks; the agent pays the freelancer or refunds the client; QVAC explains every step in a
+runs the checks; for criteria only a person can judge, QVAC writes an advisory review and the client
+approves or disputes; the agent pays the freelancer or refunds the client; QVAC explains every step in a
 live decision log.
 
 Read before doing anything non-trivial:
@@ -22,7 +23,7 @@ Read before doing anything non-trivial:
 packages/shared   types + zod schemas + route/event constants (source of truth)   [WS3 gatekeeps]
 packages/wallet   EscrowWallet: RgbWdkWallet (@utexo/wdk-wallet-rgb) + MockWallet  [WS1]
 apps/party        per-party wallet HTTP server (client :4101, freelancer :4102)    [WS1]
-apps/ai           QVAC service :4300 — /parse, /explain (runs on native Windows)  [WS2]
+apps/ai           QVAC service :4300 — /parse, /explain, /review (native Windows) [WS2]
 apps/agent        escrow server :4000 — state machine, verifier, agent wallet, WS [WS3]
 apps/web          React UI — /client, /freelancer, /agent views                   [WS4]
 scripts/          regtest stack, demo setup/reset                                  [WS1]
@@ -56,7 +57,9 @@ If a script does not exist yet, create it in the right `package.json` rather tha
 
 ## Non-negotiable rules
 1. **The LLM never moves money.** Release/refund comes only from the pure `decide()` function in
-   `apps/agent`. AI output is used for (a) proposed conditions that humans approve and (b) explanations.
+   `apps/agent`. AI output is used for (a) proposed conditions that humans approve, (b) explanations and
+   (c) advisory reviews of `client_review` conditions, which the client reads before deciding.
+   `decide()` never reads the AI review.
 2. **Contracts first.** Import types/schemas/route names from `@escrow/shared`. Do not redefine them
    locally. Need a change? Follow `.claude/commands/contract-change.md`.
 3. **Mocks behind every boundary.** `WALLET_MODE=mock|real`, `AI_MODE=mock|real`. The mock must keep
@@ -83,7 +86,11 @@ If a script does not exist yet, create it in the right `package.json` rather tha
 
 ## Glossary
 - **Escrow** — one job between one client and one freelancer.
-- **Condition** — a machine-checkable acceptance check (`tests_pass`, `file_hash`, `file_present`).
+- **Condition** — an acceptance check. Automatic: `tests_pass`, `file_hash`, `file_present` (the verifier
+  checks them). Manual: `client_review` (the client judges it, helped by QVAC's advisory report).
+- **Client review** — the `AWAITING_APPROVAL` step: all automatic checks passed, the client approves or
+  disputes. No answer within `REVIEW_WINDOW_SEC` → release.
+- **clientToken** — secret returned once by `POST /escrows`; required by `/approve`. Never in `Escrow` or logs.
 - **termsHash** — sha256 of canonical JSON of `{title, amount, assetId, deadline, conditions}`.
 - **Invoice** — RGB receive invoice string (`rgb:...`), single-use.
 - **Agent wallet** — the escrow agent's own WDK RGB wallet, which holds funds between FUNDED and RELEASED/REFUNDED.

@@ -15,8 +15,8 @@ own machine, pays in USDT on Bitcoin, and checks the work itself."
 
 **0:20 — Agreement in plain language (40 s).** Client types:
 > "Build a JavaScript function `slugify` that lowercases text, replaces spaces with dashes and strips
-> anything that isn't a letter, number or dash. The included tests must pass. Pay 50 USDT. Deadline:
-> 30 minutes."
+> anything that isn't a letter, number or dash. The included tests must pass. Also include a README.
+> Pay 50 USDT. Deadline: 30 minutes."
 
 QVAC turns it into checks on screen: *Tests pass (`npm test`)*, *`README.md` present*. The log
 explains in one sentence what each check means.
@@ -41,6 +41,25 @@ and explains; the code decides; Bitcoin settles."
 **3:50 — Close (10 s).** "Agreements in plain language, payments in USDT on Bitcoin, nothing leaves
 your machine."
 
+## Optional segment: client review (only if built and rehearsed)
+
+Not part of the 4 minutes. Use it in Q&A when a judge asks about work a machine can't check, with a
+second escrow already funded (`REVIEW_WINDOW_SEC` ≈ 120) so nobody waits on the chain.
+
+1. Agreement (already accepted and funded):
+   > "Build a one-page landing site for my bakery as index.html. Also include a README. The page should
+   > look clean and use warm colours. Pay 30 USDT. Deadline: 30 minutes."
+
+   Terms on screen: *`index.html` present*, *`README.md` present* (automatic) and *You decide: the page
+   looks clean and uses warm colours* (client review).
+2. Freelancer uploads `landing-v1`. Automatic checks pass → state **Awaiting approval**.
+3. Client screen shows the page and QVAC's report: "looks unmet: the header is dark blue, not a warm
+   colour". Client clicks **Dispute**, reason "header should be warm". Back to funded.
+4. Freelancer uploads `landing-v2`. Report: "looks met". Client clicks **Approve** → release.
+
+Line to say: "The AI reads the work and gives the client an opinion. The client decides, and if they
+don't answer in time, the freelancer gets paid. The AI still never touches the money."
+
 ## Likely judge questions — prepared answers
 - *Isn't the agent a custodian?* Yes, during the escrow. It's transparent and local; the trust-minimized
   version uses RGB Lightning hold invoices (our next step).
@@ -49,6 +68,14 @@ your machine."
 - *Running the freelancer's code is dangerous.* Timeout, temp directory, no network; production would
   use a container sandbox.
 - *Why RGB?* Native USDT on Bitcoin, private (client-side validation), no smart-contract platform needed.
+- *What about things a machine can't check, like design?* They become client-review items in the agreed
+  terms. QVAC reviews the delivery and the client approves or disputes; the decision function only sees
+  the client's answer, never the AI's opinion.
+- *Can't the freelancer trick the AI review?* They can try (prompt injection), which is why the review is
+  advice only. The worst case is a misleading opinion; the client still looks at the work and decides.
+- *What if the client never answers, or disputes forever?* No answer within the review window releases
+  the payment. Endless disputes until the deadline are a known limit; real platforms solve that with
+  human arbitration.
 
 ## Backup plan
 If anything breaks live: switch to the recorded run (`demo-backup.mp4` on every laptop's desktop) and

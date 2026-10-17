@@ -13,10 +13,13 @@ export type Role = 'client' | 'freelancer' | 'agent';
 
 export type EscrowState =
   | 'DRAFT' | 'PROPOSED' | 'AGREED' | 'AWAITING_FUNDS' | 'FUNDED'
-  | 'DELIVERED' | 'VERIFYING' | 'RELEASING' | 'RELEASED'
+  | 'DELIVERED' | 'VERIFYING' | 'AWAITING_APPROVAL' | 'RELEASING' | 'RELEASED'
   | 'REFUNDING' | 'REFUNDED' | 'CANCELLED';
 
-/** A machine-checkable acceptance condition. Discriminated on `kind`. */
+/**
+ * An acceptance condition. Discriminated on `kind`. The verifier checks `tests_pass`, `file_hash` and
+ * `file_present` automatically; `client_review` is judged by the client, after QVAC writes an advisory report.
+ */
 export type Condition =
   | {
       id: string;                 // "c1", "c2", ...
@@ -37,6 +40,11 @@ export type Condition =
       kind: 'file_present';
       description: string;
       pathPattern: string;        // glob inside the unpacked deliverable, e.g. "README.md"
+    }
+  | {
+      id: string;
+      kind: 'client_review';
+      description: string;        // what the client judges, e.g. "The logo uses warm colours"
     };
 
 export interface Acceptance {
@@ -77,8 +85,31 @@ export interface Delivery {
   sizeBytes: number;
   at: string;
   results?: VerificationResult[];
+  reviewDueAt?: string;          // set on entering AWAITING_APPROVAL: now + REVIEW_WINDOW_SEC
+  review?: AiReview;             // QVAC's advisory report on the client_review conditions (display only)
+  approval?: Approval;           // the client's answer for this delivery
 }
 
+/** The client's answer to a delivery in AWAITING_APPROVAL. */
+export interface Approval {
+  decision: 'approve' | 'dispute';
+  at: string;
+  reason?: string;               // required for 'dispute'; shown to the freelancer
+}
+
+/** QVAC's opinion on each client_review condition. Shown to people, never read by decide(). */
+export interface AiReview {
+  items: {
+    conditionId: string;         // a client_review condition id
+    opinion: 'looks_met' | 'looks_unmet' | 'unsure';
+    note: string;                // 1–2 sentences; may only mention files that exist in the delivery
+  }[];
+  source: 'ai' | 'template';     // 'template' = AI unavailable, every item 'unsure'
+  model?: string;
+  ms: number;
+}
+
+/** One per automatic condition. `client_review` conditions never get a VerificationResult. */
 export interface VerificationResult {
   conditionId: string;
   passed: boolean;
@@ -96,8 +127,12 @@ export type Decision =
   | { action: 'release'; reason: string }
   | { action: 'retry'; reason: string; failed: string[] }
   | { action: 'refund'; reason: string }
+  | { action: 'await_approval'; reason: string; pending: string[] } // client_review condition ids
   | { action: 'wait'; reason: string };
 ```
+
+The client's `clientToken` (§4) is never part of `Escrow`: escrows are broadcast to every WebSocket
+client, including the freelancer.
 
 ## 2. Decision log (`packages/shared/src/events.ts`)
 
@@ -109,6 +144,7 @@ export type LogEventType =
   | 'funding.invoice_created' | 'funding.payment_seen' | 'funding.settled'
   | 'delivery.received' | 'verify.started' | 'verify.condition_result' | 'verify.finished'
   | 'decision.made'
+  | 'review.report_ready' | 'review.approved' | 'review.disputed' | 'review.expired'
   | 'payout.sent' | 'payout.settled' | 'refund.sent' | 'refund.settled'
   | 'escrow.cancelled' | 'error';
 
@@ -125,6 +161,11 @@ export interface LogEvent {
   explanationSource?: 'ai' | 'template';
 }
 ```
+
+Client review events: `decision.made` with `action: 'await_approval'` marks `VERIFYING → AWAITING_APPROVAL`.
+`review.report_ready` (actor `ai`, title written by code from the report counts) is emitted when QVAC's
+report is stored. `review.approved` / `review.disputed` (actor `client`) and `review.expired` (actor
+`system`, review window ran out) are each followed by the `decision.made` that moves the state.
 
 WebSocket messages from the agent (`ws://<agent>:4000/ws?escrowId=<id>`; omit `escrowId` for all):
 
@@ -189,7 +230,7 @@ Selected by `WALLET_MODE=real|mock`.
 | ------ | ---- | ---- | ------- |
 | GET  | `/health` | – | `{ ok, walletMode, aiUp, network }` |
 | GET  | `/config` | – | `{ assetId, assetTicker, precision, network }` |
-| POST | `/escrows` | `{ title, rawText, amount, deadline }` | `Escrow` (state `DRAFT`, parse starts async) |
+| POST | `/escrows` | `{ title, rawText, amount, deadline }` | `Escrow & { clientToken }` (state `DRAFT`, parse starts async; the only response that carries `clientToken`) |
 | GET  | `/escrows` | – | `Escrow[]` |
 | GET  | `/escrows/:id` | – | `{ escrow, events }` |
 | POST | `/escrows/:id/reparse` | `{ rawText? }` | `Escrow` |
@@ -198,9 +239,17 @@ Selected by `WALLET_MODE=real|mock`.
 | POST | `/escrows/:id/refund-invoice` | `{ invoice }` | `Escrow` (client provides) |
 | POST | `/escrows/:id/funded` | `{ txid }` | `Escrow` (client hint; agent still verifies) |
 | POST | `/escrows/:id/deliveries` | multipart: `file`, `payoutInvoice` | `Escrow` |
+| GET  | `/escrows/:id/deliveries/:n/files` | – | `{ path, sizeBytes }[]` (the unpacked delivery) |
+| GET  | `/escrows/:id/deliveries/:n/files/*` | – | the raw file, sent with `Content-Security-Policy: sandbox` |
+| POST | `/escrows/:id/approve` | `{ deliveryN, decision: 'approve' \| 'dispute', reason?, clientToken }` | `Escrow`; `403` wrong token, `409` not `AWAITING_APPROVAL` or not the latest delivery, `400` dispute without `reason` |
 | POST | `/dev/mine` | `{ blocks?: number }` | `{ height }` (regtest only) |
 | POST | `/dev/reset` | – | clears db (dev only) |
 | WS   | `/ws?escrowId=` | – | `WsMessage` stream |
+
+**`clientToken`.** A random 32-byte hex string created with the escrow and returned once by
+`POST /escrows`. The client UI keeps it; the agent stores only its sha256 and compares in constant time.
+It never appears in `Escrow`, `LogEvent.data`, WebSocket messages or logs. Other routes still trust the
+`role` in the body (LAN demo), but `/approve` releases money, so it needs proof that the caller is the client.
 
 ### AI service `apps/ai` — `http://<ai-host>:4300`
 
@@ -210,15 +259,22 @@ Selected by `WALLET_MODE=real|mock`.
 | POST | `/parse` | `{ title, rawText, amountDisplay, assetTicker, deadline }` | `ParseResult` |
 | POST | `/explain` | `{ event: LogEvent, escrow: Escrow }` | `text/event-stream` of `{ text }` deltas, final `{ done: true, text, source? }` (`source`: `'ai' \| 'template'`) |
 | POST | `/explain/sync` | same | `{ text, source }` (non-streaming fallback) |
+| POST | `/review` | `ReviewRequest` | `AiReview` (§1); advisory only |
 
 ```ts
 export interface ParseResult {
-  conditions: Condition[];       // already validated
+  conditions: Condition[];       // already validated; may include client_review
   summary: string;
-  clarifications: string[];
+  clarifications: string[];      // things that can't be agreed yet (e.g. "the hash I'll send later")
   source: 'ai' | 'fallback';
   model?: string;
   ms: number;
+}
+
+export interface ReviewRequest {
+  escrow: Escrow;                // rawText, conditions, deliveries (with automatic results)
+  deliveryN: number;
+  files: { path: string; sizeBytes: number; excerpt?: string }[]; // excerpt: first few KB of text files; absent for binaries
 }
 ```
 
@@ -239,3 +295,7 @@ All three servers send permissive CORS headers (LAN demo) and log every request 
 ## 5. Environment variables (`.env.example`)
 
 See `.env.example` at the repo root. Every process reads only the variables listed there.
+
+Client review adds two agent variables (add them to `.env.example` when building):
+`REVIEW_WINDOW_SEC` (how long the client has to approve or dispute before the agent releases; ~120 for
+the demo) and `AI_REVIEW_TIMEOUT_MS` (agent → `apps/ai` `/review`, e.g. 30000).
