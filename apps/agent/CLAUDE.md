@@ -22,10 +22,11 @@ src/hub.ts           WebSocket hub: snapshot on connect, broadcast escrow/event/
 src/ticker.ts        every 5 s: deadlines, pending transfers, stuck states
 src/dev.ts           /dev/mine (bitcoind RPC generatetoaddress), /dev/reset, auto-mine
 src/wallet/          index.ts: loads WS1's @escrow/wallet, else StubWallet (mock only); timeout on every call
-src/parse-fallback.ts, src/templates.ts   deterministic parser + explanation text when the AI is down
+src/parse-fallback.ts  WS2's deterministic parser (apps/ai/src/fallback.ts) + our default test timeout
+src/templates.ts     explanation/review text when the AI is down
 ```
 
-## Status (implemented, `npm test -w apps/agent`: 78 tests)
+## Status (implemented, `npm test -w apps/agent`: 321 tests)
 All tasks 1–7 below are implemented, including client review, and covered by `test/e2e.test.ts`
 (fail-then-pass → released, deadline → refunded, validation/reparse/cancel, client review: dispute →
 v2 → approve → released, and no answer → released), `test/verifier.test.ts` and `test/decide.test.ts`
@@ -49,6 +50,13 @@ WS1's `@escrow/wallet` lands; a real `/review` run against apps/ai once WS2 ship
 - Refund invoice: a fresh one is requested from `CLIENT_PARTY_URL` (after checking its `/health` says
   `role: client`); the invoice the client attached via `/refund-invoice` is the fallback.
 - Error events are de-duplicated per (state, title), so a retried step doesn't flood the log.
+- Money deadlines (escrow deadline, `reviewDueAt`) use `safeNow()` (`src/util.ts`): the earlier of the
+  wall clock and a monotonic clock anchored at startup. A wall-clock step can only make a release or
+  refund late, never early. Validating a new escrow's deadline still uses the plain wall clock.
+- With `@escrow/wallet` installed (WS1, on main), mock mode uses its shared-ledger `MockWallet`, not the
+  `StubWallet`; `POST /funded` then no longer simulates a payment. The client must really pay the funding
+  invoice (party server, or `createWallet({ role: 'client' })` in a script). Verified end to end with real
+  agent + `apps/ai` (AI_MODE=mock) + MockWallet: `scratch/smoke-client-review.ts` (git-ignored).
 - `decide()` releases if every check passed even when verification ends after the deadline (the
   delivery itself was accepted before the deadline; late deliveries get 409).
 - Cancel in `AWAITING_FUNDS` is refused once the incoming payment has been seen. A payment that
@@ -59,8 +67,12 @@ WS1's `@escrow/wallet` lands; a real `/review` run against apps/ai once WS2 ship
 - `/review` and `/explain` share one queue (`AiClient.exclusive`), so the model runs one job at a time.
   The AI's review items are normalised to exactly one per `client_review` condition (unknown ids dropped,
   missing ones `unsure`). If the client answers before the report is ready, the report is discarded.
-- The fallback parser turns sentences with words like "look", "colours", "clean", "professional" into
-  `client_review` items (max 3), so the client-review demo also works with the AI down.
+- The fallback parser is WS2's `apps/ai/src/fallback.ts` (imported via the `@escrow/ai` dependency),
+  not a copy: the AI runs on another laptop, so when it is unreachable the agent parses locally, and
+  one parser means the two can't drift. It passes all 17 cases in `fixtures/agreements.json` (scored
+  with WS2's `checkCase` in `test/fallback.test.ts`), checks `index.html` for the landing demo, and
+  writes a plain-English summary without the raw ISO deadline. Only an unstated test timeout is
+  replaced with `VERIFY_DEFAULT_TIMEOUT_SEC`.
 
 ## Tasks, in order
 1. **Skeleton with mocks (by H3).** Store, machine, routes, hub. Use `MockWallet` and `AI_MODE=mock`
@@ -143,3 +155,9 @@ review window runs out. `/approve` without the right `clientToken` returns `403`
   `timeout` alone only kills the shell. We also kill the group after a normal exit (no orphans).
 - `pkill -f <pattern>` in a shell whose own command line contains the pattern kills that shell.
   Stop the dev server by port: `ss -ltnp | grep 4000`.
+- Our own fallback parser drifted from WS2's: it missed `index.html` in the landing agreement, put the
+  raw ISO deadline in the summary, and turned "clean.py" into a `client_review` (`\bclean\b` matches
+  before a dot). It scored 6/17 on the fixtures. Now we import WS2's parser instead of keeping a copy.
+- This laptop's wall clock also steps (~2.9 s, seen as `Date.now() - monotonic` jumping in the test run;
+  a 15 s probe can miss it). Tests that wait for a deadline must wait on the agent's `safeNow()`, not
+  `Date.now()`, or they flake.

@@ -38,6 +38,7 @@ import {
   nowIso,
   short,
   sleep,
+  safeNow,
 } from './util';
 import { templateReview, normalizeReview } from './templates';
 import { checkCondition, prepareWorkspace } from './verifier';
@@ -304,7 +305,7 @@ export class Orchestrator {
         };
         throw conflict(why[e.state] ?? `Deliveries are only accepted once the escrow is funded (state is ${e.state})`);
       }
-      if (Date.now() >= Date.parse(e.deadline)) throw conflict('The deadline has passed, so deliveries are closed');
+      if (safeNow().getTime() >= Date.parse(e.deadline)) throw conflict('The deadline has passed, so deliveries are closed');
 
       const n = e.deliveries.length + 1;
       const dir = path.join(this.d.config.dataDir, 'deliverables', id, String(n));
@@ -360,7 +361,7 @@ export class Orchestrator {
         data: { delivery: delivery.n, ...(approval.reason ? { reason: approval.reason } : {}) },
         explain: body.decision === 'dispute',
       });
-      const result = this.applyDecision(next, decide(next, [], new Date()));
+      const result = this.applyDecision(next, decide(next, [], safeNow()));
       this.kick(id);
       return result;
     });
@@ -468,6 +469,7 @@ export class Orchestrator {
       const { conditions } = result;
       const hash = termsHash({ title: cur.title, amount: cur.amount, assetId: cur.assetId, deadline: cur.deadline, conditions });
       const n = conditions.length;
+      const auto = conditions.filter(isAutomaticCondition).length;
       const who = result.source === 'ai' ? 'AI' : 'Fallback parser';
       this.d.machine.transition(
         cur,
@@ -475,7 +477,10 @@ export class Orchestrator {
         {
           type: 'terms.proposed',
           actor: result.source === 'ai' ? 'ai' : 'system',
-          title: n === 0 ? `${who} found no automatic checks: the agreement needs editing` : `${who} proposed ${plural(n, 'check')}`,
+          title:
+            n === 0
+              ? `${who} found no automatic checks: the agreement needs editing`
+              : `${who} proposed ${plural(auto, 'check')}${n > auto ? ` and ${plural(n - auto, 'item')} for the client to judge` : ''}`,
           data: {
             source: result.source,
             model: result.model,
@@ -570,11 +575,11 @@ export class Orchestrator {
   }
 
   private async checkDeadline(id: string): Promise<void> {
-    if (decide(this.mustGet(id), [], new Date()).action !== 'refund') return;
+    if (decide(this.mustGet(id), [], safeNow()).action !== 'refund') return;
     await this.lock(id, () => {
       const cur = this.d.store.get(id);
       if (!cur || cur.state !== 'FUNDED') return;
-      const decision = decide(cur, [], new Date());
+      const decision = decide(cur, [], safeNow());
       if (decision.action === 'refund') this.d.machine.transition(cur, 'REFUNDING', this.decisionSpec(cur, decision));
     });
   }
@@ -632,7 +637,7 @@ export class Orchestrator {
         title: `${passed} of ${plural(results.length, 'check')} passed`,
         data: { delivery: delivery.n, passed, total: results.length },
       });
-      this.applyDecision(withResults, decide(withResults, results, new Date()));
+      this.applyDecision(withResults, decide(withResults, results, safeNow()));
     });
   }
 
@@ -651,7 +656,7 @@ export class Orchestrator {
         return machine.transition(e, 'FUNDED', spec);
       case 'await_approval': {
         const n = e.deliveries.at(-1)?.n;
-        const reviewDueAt = new Date(Date.now() + config.reviewWindowSec * 1000).toISOString();
+        const reviewDueAt = new Date(safeNow().getTime() + config.reviewWindowSec * 1000).toISOString();
         return machine.transition(
           e,
           'AWAITING_APPROVAL',
@@ -668,11 +673,11 @@ export class Orchestrator {
     const delivery = e.deliveries.at(-1);
     if (!delivery) throw new StepError('There is no delivery to review', 'system');
     if (!delivery.review) this.startReview(id, delivery.n);
-    if (decide(e, [], new Date()).action === 'wait') return;
+    if (decide(e, [], safeNow()).action === 'wait') return;
     await this.lock(id, () => {
       const cur = this.d.store.get(id);
       if (!cur || cur.state !== 'AWAITING_APPROVAL') return;
-      const decision = decide(cur, [], new Date());
+      const decision = decide(cur, [], safeNow());
       if (decision.action === 'wait') return;
       const d = cur.deliveries.at(-1)!;
       if (!d.approval) {

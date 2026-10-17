@@ -57,3 +57,14 @@ export function pickEscrow(state: StreamState, escrowId?: string | null): Escrow
 
 /** Final states: nothing will happen any more, so no deadline to count down to. */
 export const isClosed = (s: EscrowState) => TERMINAL_STATES.includes(s);
+
+/**
+ * The `error` the agent logged for the step it is stuck on right now, if any: logged in the current
+ * state and nothing about the escrow has changed since (every escrow change moves `updatedAt`; logging
+ * an event does not). Without this a party screen would just keep showing "Paying…".
+ */
+export function currentProblem({ escrow, events }: EscrowView): LogEvent | undefined {
+  const e = events.findLast((x) => x.type === 'error');
+  if (!e || isClosed(escrow.state) || e.data?.state !== escrow.state || e.at < escrow.updatedAt) return undefined;
+  return e;
+}

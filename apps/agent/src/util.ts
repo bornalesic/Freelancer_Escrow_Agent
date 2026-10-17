@@ -35,6 +35,18 @@ export const errorMessage = (err: unknown) => (err instanceof Error ? err.messag
 
 export const nowIso = () => new Date().toISOString();
 
+const WALL0 = Date.now();
+const MONO0 = performance.now();
+
+/**
+ * The clock for money deadlines (escrow deadline, reviewDueAt): the EARLIER of the wall clock and a
+ * steady clock (wall time at startup + monotonic time since). On WSL the wall clock steps by seconds
+ * (here ~3 s, on WS1's laptop ~96 s; packages/wallet/CLAUDE.md). A step in either direction, or a
+ * startup during a bad step, can then only make a release or refund a little late, never early.
+ * Keep `nowIso()` for display timestamps.
+ */
+export const safeNow = () => new Date(Math.min(Date.now(), WALL0 + (performance.now() - MONO0)));
+
 /** "a3f9c0…" → first 4 chars + ellipsis, for log titles. */
 export const short = (s: string | undefined, n = 4) => (s ? `${s.slice(0, n)}…` : '?');
 

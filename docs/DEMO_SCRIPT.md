@@ -22,7 +22,8 @@ QVAC turns it into checks on screen: *Tests pass (`npm test`)*, *`README.md` pre
 explains in one sentence what each check means.
 
 **1:00 — Both sides agree (20 s).** Client and freelancer each click Accept on their own laptops.
-Log: "Both parties agreed to the same terms (hash a3f9…)".
+Log: "Both parties agreed to the same terms (hash a3f9…)". Point at "terms a3f9… · checked here ✓":
+each browser recomputes the hash from the terms on its own screen, and won't accept if they differ.
 
 **1:20 — Lock the money (30 s).** Client clicks "Lock 50 USDT". Client balance drops to 50, agent
 shows 50 in escrow. Log explains: funds are held by the agent's own wallet on Bitcoin via RGB and
@@ -62,6 +63,31 @@ the `clientToken`); the dispute form has one-click "Not met: …" reasons, so no
 
 Line to say: "The AI reads the work and gives the client an opinion. The client decides, and if they
 don't answer in time, the freelancer gets paid. The AI still never touches the money."
+
+## Rehearsal checklist (WS4)
+
+Screens (any laptop can point at another over the LAN with query params; they stick for the tab):
+- Client: `http://<web-host>:5173/client?agent=http://<agent-ip>:4000&party=http://localhost:4101`
+- Freelancer: `http://<web-host>:5173/freelancer?agent=http://<agent-ip>:4000&party=http://localhost:4102`
+- Projector: `http://<web-host>:5173/agent?agent=http://localhost:4000&client=http://<client-ip>:4101&freelancer=http://<freelancer-ip>:4102`
+
+Before each run:
+1. `npm run fixtures:zip` once per laptop that uploads; the files are in `fixtures/dist/`.
+2. `npm run demo:reset` (or, in mock mode, delete `MOCK_LEDGER_PATH` and the agent data dir), restart the agent.
+3. Header dots on every screen are green: Agent, Live, AI (and Wallet on the two party screens). A red
+   dot names the process that is down; fix it before going on stage.
+4. Projector footer shows `QVAC <model> · on-device` (not just `QVAC · on-device`, which means the AI
+   service isn't reporting a model yet).
+5. Client wallet shows 100 tUSDT, freelancer 0, "Held in escrow" 0.
+6. Browser zoom: projector at 100–125 % so the decision log fills the centre column; party laptops at 100 %.
+7. Client review segment only: create its agreement **in the client browser used on stage** (it keeps
+   the approval key); a different browser gets "doesn't have the approval key".
+
+During the run, check on the projector: v1 failure shows the failing test name in the explanation;
+"Held in escrow" goes 0 → 50 → 0; both party balances move (client 100 → 50, freelancer 0 → 50).
+
+Fallback without any service: `?fixture=1` on any screen renders a recorded mid-demo state (slugify
+after v1 failed; `&escrow=esc_b4k3` for the client review).
 
 ## Likely judge questions — prepared answers
 - *Isn't the agent a custodian?* Yes, during the escrow. It's transparent and local; the trust-minimized
