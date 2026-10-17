@@ -24,8 +24,16 @@ export async function buildServer(h: AiHandlers, log: (msg: string) => void = ()
   const app = Fastify({ logger: false, bodyLimit: 2 * 1024 * 1024 });
   await app.register(cors, { origin: '*' });
 
-  // One line per request (hijacked SSE responses log themselves).
+  // One line per request. Hijacked SSE responses log themselves. Every agent polls /health every 5 s,
+  // so a successful health check is logged only the first time a caller shows up.
+  const healthCallers = new Set<string>();
   app.addHook('onResponse', async (req, reply) => {
+    if (reply.statusCode === 200 && req.url === AI_ROUTES.explain) return;
+    if (reply.statusCode === 200 && req.url === AI_ROUTES.health) {
+      if (!healthCallers.has(req.ip)) log(`health: first poll from ${req.ip} (later polls are not logged)`);
+      healthCallers.add(req.ip);
+      return;
+    }
     log(`${req.method} ${req.url} ${reply.statusCode} ${Math.round(reply.elapsedTime)}ms`);
   });
 
