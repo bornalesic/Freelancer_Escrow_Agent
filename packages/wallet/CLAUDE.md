@@ -47,18 +47,37 @@ only — the native RGB binaries have no Windows build.
 - Networks: the 2.0.3 types say `mainnet | testnet | regtest`, but the wrapper passes `network` straight
   to rgb-sdk, which also accepts `signet` (UTEXO confirmed plain signet works; `signetcustom` does not).
   Extend the local type augmentation to include `'signet'` if we switch.
-- The 2.0.3 TypeScript types omit `dataDir`, `indexerUrl`, `transportEndpoint` even though the runtime
-  accepts them → add a small local type augmentation, pinned to the version.
+- ~~The 2.0.3 TypeScript types omit `dataDir`, `indexerUrl`, `transportEndpoint`~~ — **wrong, checked
+  against the installed 2.0.3.** `RgbWalletConfig` declares all three, plus `keys` and
+  `transferMaxFee`. No type augmentation is needed for them. The only augmentation we may need is
+  `'signet'` on `network`, which really is typed `'mainnet' | 'testnet' | 'regtest'`.
 - Useful account methods: `registerWallet`, `createUtxos({ upTo, num, size, feeRate })`,
   `issueAssetNia({ ticker, name, precision, amounts })`, `receiveAsset({ witness, assetId, amount })`,
   `transfer({ token, recipient, amount, feeRate, minConfirmations })`, `quoteTransfer`,
-  `getAssetBalance(assetId)` → `{ settled, future, spendable }`, `listAssets`, `listTransfers(assetId)`,
-  `getTransfers`, `refreshWallet`, `syncWallet`, `failTransfers`, `decodeRGBInvoice`, `sign`, `dispose`.
+  `listAssets`, `listTransfers(assetId)`, `getTransfers`, `refreshWallet`, `syncWallet`,
+  `failTransfers`, `sign`, `dispose`. Two names in the original list do **not** exist — see below.
 - **Verify every name above against the installed package's README/types before use.** Docs lag code.
 
+## Driving the failure path in mock mode (for WS3 and WS4)
+`MockWallet` can produce `status: 'failed'` two ways. Both refund the sender in full — `pay()` debits
+up front, so a failure that did not refund would make the amount vanish and the escrow could never
+be made whole. The recipient is never credited.
+
+1. **`MOCK_FAIL_AMOUNT`** (env, base units). Paying exactly that amount resolves to `failed` instead
+   of `settled` after `MOCK_SETTLE_MS`. No code change, so it is the way to rehearse the refund path
+   from the UI: set `MOCK_FAIL_AMOUNT=25000000` and any 25 tUSDT payment fails.
+2. **`wallet.failTransfer({ txid, reason? })`**. Not part of `EscrowWallet` — it is the mock's
+   stand-in for rgb-lib's `failTransfers`, for tests that need to fail a specific transfer. Only the
+   sender may fail its own transfer, and only while it is still pending.
+
+`waitForTransfer` **returns** a failed transfer rather than throwing: a failure is an outcome the
+agent has to act on, not an exception. It only throws `WalletTimeoutError` when nothing resolves in
+time. A failed transfer does **not** free the invoice for reuse, matching a spent RGB blinded
+receive — the payer must request a fresh one.
+
+Verified across separate processes: `node scratch/mock-fail-path.mjs`.
+
 ## Learned the hard way
-(fill in during setup and the hackathon: exact status strings, which calls are sync vs async,
-how long a refresh takes, what errors look like when UTXOs run out, ...)
 
 - `@utexo/wdk-wallet-rgb@2.0.3` on Node 22 / Ubuntu 24.04 WSL2: native addon
   (`@utexo/rgb-lib-linux-x64`) loads; `new WalletManagerRgb(mnemonic, { network: 'regtest', dataDir })`
@@ -66,6 +85,171 @@ how long a refresh takes, what errors look like when UTXOs run out, ...)
 - **`manager.dispose()` throws `Error: Invalid checksum`** after `getAccount()`: it blanks `xpriv` before
   `super.dispose()` disposes the account, whose `keyPair` getter then decodes the empty xpriv. Call
   `account.dispose()` only (or wrap `manager.dispose()` in try/catch).
+
+### The host wall clock jumped ~96 s — FIXED, but check the other three laptops
+Found while chasing a 1-in-8 flaky MockWallet test on 2026-10-17. `Date.now()` leaped forward ~96.7 s
+and immediately back, several times per ten seconds, in **both** WSL distros, while
+`performance.now()` advanced smoothly and `timedatectl` reported "System clock synchronized: yes".
+Repro: `node scratch/wsl-clock-jump.mjs`.
+
+**Root cause was on the Windows side, not in WSL.** The `W32Time` service was *Stopped* with startup
+type *Manual*, so nothing corrected the host clock and it had drifted **96.67 s slow**
+(`w32tm /stripchart /computer:time.windows.com /dataonly` showed `-96.668s`). Inside WSL two time
+sources then fought over it: `systemd-timesyncd` pulled the clock forward to true NTP time, and the
+Hyper-V host source (`/dev/ptp_hyperv`) dragged it back to Windows' wrong time, forever.
+
+**Fix applied** (admin PowerShell):
+```powershell
+Set-Service -Name W32Time -StartupType Automatic
+Start-Service -Name W32Time
+w32tm /resync /force
+```
+Offset went from −96.668 s to ~2 ms, and both distros now measure 0 jumps with ~1.6 ms worst drift.
+`timesyncd` needs a minute or two to stop slewing afterwards (the residual steps shrink 1751 → 1125
+→ 711 → 0 ms), so do not judge the fix on the first thirty seconds.
+
+**Every laptop should be checked before the hackathon.** Run `scratch/wsl-clock-jump.mjs` on each.
+If two laptops' clocks disagree by ~96 s, the agent's decision log will interleave events in the
+wrong order across machines and the judges will see it.
+
+What it did to the mock wallet: a forward jump made every pending transfer instantly "due", so a
+60-second settlement completed at once — in the real flow that is **releasing escrowed funds early**.
+The backward jump then stalled settlement for ~96 s.
+
+Keep the code defensive anyway. A clock step is not exotic: an NTP correction, a laptop resuming
+from sleep, or a venue network finally letting NTP through will all do it mid-demo.
+**Any deadline measured as `Date.now() + timeout` can fire early or stall.** That covers
+`AI_PARSE_TIMEOUT_MS`, `AI_EXPLAIN_TIMEOUT_MS`, `AI_REVIEW_TIMEOUT_MS`, `VERIFY_DEFAULT_TIMEOUT_SEC`,
+the verifier's per-condition `timeoutSec`, `waitForTransfer` timeouts, invoice expiry and
+`REVIEW_WINDOW_SEC`. Tell WS2 and WS3.
+
+`REVIEW_WINDOW_SEC` is the dangerous one (client review, `docs/ESCROW_FLOW.md`): when
+`reviewDueAt = now + REVIEW_WINDOW_SEC` passes with no answer, the agent **releases** to the
+freelancer. With the ~120 s demo window, a ~96 s forward jump pays out before the client has had a
+chance to approve or dispute. WS3 should time the window monotonically (keep `reviewDueAt` as the
+displayed value only).
+
+The fix in this package is `src/clock.ts`: wall clock for human-facing timestamps only (`createdAt`,
+`expiresAt` — coarse enough to tolerate the skew), and a monotonic clock for every duration and
+deadline. `performance.now()` has a per-process origin so it cannot be written to the shared ledger;
+`/proc/uptime` is monotonic *and* shared by every process on the host, so that is what the ledger
+stores. A transfer whose `createdAtMono` is in the future came from a previous boot and is treated as
+due. Regression test: "does not settle a pending transfer when Date.now() jumps forward".
+
+### From pre-hackathon setup (2026-10-16/17, verified against the installed package)
+Probe folder: `~/scratch/wdk-probe` in WSL **Ubuntu-24.04**. Everything below was read out of
+`@utexo/wdk-wallet-rgb@2.0.3` as actually installed, not from docs.
+
+- **Installs and loads on Ubuntu 24.04 / glibc 2.39 / Node 22.23.3.** Exports are `default`
+  (= `WalletManagerRgb`), `WalletAccountRgb`, `WalletAccountReadOnlyRgb`. It pins `@utexo/rgb-sdk`
+  to exactly `1.0.3`, confirming the glibc ≥ 2.38 constraint. Ubuntu 22.04 (glibc 2.35) is unusable.
+- **`WalletManagerRgb extends WalletManager` from `@tetherto/wdk-wallet`**, and `WalletAccountRgb
+  extends WalletAccountReadOnlyRgb implements IWalletAccount`. So it is already WDK-shaped — that is
+  most of the answer to the SETUP question "can `@tetherto/wdk` core register `WalletManagerRgb`?".
+  `@tetherto/wdk` core is `1.0.0-beta.20`; the actual `registerWallet`-into-core call is still untested.
+- **The balance API is not what the plan above assumes.** There is no public `getAssetBalance`.
+  The wrapper exposes:
+  - `getBalance(): Promise<bigint>` — BTC in sats, internally `getBtcBalance().vanilla.settled`
+  - `getTokenBalance(assetId): Promise<bigint>` — asset base units, internally
+    `getAssetBalance(assetId).settled`
+
+  Both **flatten to `.settled` and throw away `future` and `spendable`.** If the agent needs to show
+  a pending-but-not-settled balance, reach the underlying rgb-lib wallet via `account.getRgbWallet()`.
+  Decide this early — it affects what `EscrowWallet.balance()` can return.
+- **`decodeRGBInvoice` does not exist** anywhere in the package. If we need to validate or inspect an
+  invoice before paying, it has to come from `@utexo/rgb-sdk` or be done by hand.
+- **Most read calls are synchronous** (return a value, not a Promise): `listAssets()`,
+  `listTransfers(assetId)`, `listUnspents()`, `listTransactions()`, `failTransfers(id)`,
+  `refreshWallet()`, `syncWallet()`, `dispose()`. Async ones: `getBalance`, `getTokenBalance`,
+  `transfer`, `quoteTransfer`, `sendTransaction`, `sign`, `verify`, `getTransfers`,
+  `getTransactionReceipt`, `getTransferReceipt`, `toReadOnlyAccount`, `registerWallet`.
+  Do not blanket-`await` — and the serializing queue must handle sync calls too.
+- **`registerWallet()` is contradictory between docs and types**: the package README shows it used
+  synchronously ("synchronous in v2", `const { address, btcBalance } = account.registerWallet()`) but
+  `types/src/wallet-account-rgb.d.ts` declares `Promise<RegisterWalletResult>`. Check at runtime
+  before relying on either. `await` works in both cases, so prefer `await`.
+- `manager.getAccount(index?)` is **async** and only index 0 is valid. `getAccountByPath()` returns
+  `Promise<never>` — it is not supported; do not plan on derivation paths.
+- `transferMaxFee` is a config field on `RgbWalletConfig` — use it for `MAX_FEE_SAT` instead of only
+  checking `quoteTransfer` by hand.
+- The JSDoc on both constructors says "network and **rgbNodeEndpoint** are required", but no
+  `rgbNodeEndpoint` field exists in `RgbWalletConfig`. Stale doc text; ignore it.
+- v2 is a breaking change from v1 and the package ships its own `MIGRATION.md` — read it before
+  copying any v1 example off the internet.
+- The package declares **no peerDependencies**, so nothing will warn you if an override changes the
+  `@utexo/rgb-sdk` version. The "do not override" rule above is unenforced — be careful.
+
+### From the full-path rehearsal (2026-10-17, regtest, all green)
+Script: `scratch/rehearsal.mjs` (also at `~/scratch/wdk-probe/rehearsal.mjs`, run it with
+`node rehearsal.mjs --fresh`). It does the whole SETUP §3 path: 3 wallets → fund by mining →
+`createUtxos` → issue NIA → invoice → transfer → mine → refresh both → settled, twice
+(treasury→client 100, client→freelancer 40). Full log: `scratch/rehearsal-log.txt`.
+
+**Transfer status strings — the answer this section was waiting for.** Both sides go through exactly:
+```
+WaitingCounterparty  ->  WaitingConfirmations  ->  Settled
+```
+Map these in `TransferSummary`: `WaitingCounterparty`/`WaitingConfirmations` → `pending`,
+`Settled` → `settled`, `Failed` → `failed`. Keep the raw string in `rawStatus`.
+
+**Who has to refresh, and in what order.** The transfer does not advance on its own:
+1. `transfer()` returns with both sides at `WaitingCounterparty`.
+2. **Recipient** `refreshWallet()` → recipient moves to `WaitingConfirmations` (this is the step that
+   pulls the consignment off the proxy — without it nothing ever progresses).
+3. **Sender** `refreshWallet()` → sender moves to `WaitingConfirmations`.
+4. Mine a block, then both refresh again → `Settled`. The sender settles one refresh before the
+   recipient does, so **do not stop polling when the sender says Settled** — wait for the recipient.
+
+On regtest the whole invoice→settled cycle takes **under a second**. `WALLET_POLL_MS=2000` is fine.
+
+**`ESCROW_ASSET_TICKER=tUSDT` in `.env.example` is invalid.** rgb-lib rejects a mixed-case ticker:
+`RgbLib(InvalidTicker { details: "ticker needs to be all uppercase" })`. The ticker must be `TUSDT`.
+The asset *name* is free-form, so "tUSDT" can still be what the UI shows. Fixed in `.env.example`.
+
+**A wallet cannot invoice for an asset it has never seen.** `receiveAsset({ assetId, ... })` on a
+wallet with no history of that asset throws `RgbLib(AssetNotFound { asset_id: "rgb:..." })`. The
+first invoice to each new wallet must **omit `assetId`** — it learns the asset from the incoming
+consignment, and later invoices can be bound. This hits the demo directly: the freelancer's first
+tUSDT invoice is necessarily unbound. `scratch/rehearsal.mjs` has a `makeInvoice()` helper that picks
+the right form by checking `listAssets()` first; reuse that shape in `RgbWdkWallet.createInvoice()`.
+Note the security consequence: an unbound invoice will accept *any* asset, so the agent must verify
+the asset id on the received transfer rather than trusting the invoice.
+
+**Coinbase maturity.** rgb-lib's coin selection does not filter for it. Funding a wallet by mining
+straight to its address and immediately calling `createUtxos` fails with
+`FailedBroadcast ... bad-txns-premature-spend-of-coinbase, tried to spend coinbase at depth 26`.
+`setup-demo.ts`'s design (mine to a treasury, *send* BTC to each wallet) sidesteps this because
+ordinary outputs have no maturity rule — keep that design. If you ever do mine directly to a wallet,
+mine 100+ more blocks before using the funds.
+
+**Other things that will bite:**
+- `electrs` accepts TCP on 50001 immediately but **never answers while the chain is at height 0**
+  (`waiting for 0 blocks to download (IBD)`). Every rgb-lib call then fails with
+  `WalletError: Failed to establish online connection`. After `down -v`, mine a block *before*
+  opening any wallet. `demo:reset` must do this. The rehearsal has an `electrsReady()` gate.
+- Node's `fetch()` **refuses** `http://user:pass@host` ("Request cannot be constructed from a URL
+  that includes credentials"). `/dev/mine` has to send an `Authorization: Basic ...` header instead.
+- `quoteTransfer()` and `transfer()` return **BigInt** fields (`fee`), so a plain `JSON.stringify` of
+  the result throws `Do not know how to serialize a BigInt`. Matters wherever we log or send them.
+- `transfer()` internally calls `sendBegin` **twice** (plus once more if you call `quoteTransfer`
+  first). Harmless but it makes the logs confusing, and it means a transfer is not as cheap as it looks.
+- The SDK prints to stdout uninvited: `indexerUrl tcp://...`, `sendBegin params {...}`, and
+  `rgb-lib estimation fee are not available, using default fee rate 2`. On regtest the `feeRate` we
+  pass appears to be ignored in favour of that default. Expect noise in the agent logs.
+- The fee for a transfer was a flat **309 sats** in both transfers.
+- `createUtxos()` was ~800 ms on a warm indexer, but took **98 s once** right after bulk-mining a few
+  hundred blocks, while electrs caught up. Do not set a tight timeout on the first call after
+  `demo:reset`, and prefer to warm up before the audience is watching.
+- `issueAssetNia()` returns the full asset including `balance: { settled, future, spendable }` — this
+  is the one place the triple is visible without reaching for `getRgbWallet()`.
+
+**Measured on this laptop (regtest, warm):** `getAccount` ~310 ms · `registerWallet` ~390 ms ·
+`createUtxos` ~800 ms · `syncWallet` ~330 ms · `transfer` ~190 ms · `quoteTransfer` ~100 ms ·
+`issueAssetNia` ~90 ms · `receiveAsset` ~50 ms · `refreshWallet` 1–250 ms · `getBalance` ~125 ms ·
+`getTokenBalance` ~1 ms. Confirms the sync/async split listed above.
+
+### From the hackathon
+(fill in: what errors look like when UTXOs run out, ...)
 
 ## Tests
 - `MockWallet`: vitest — pay between two instances sharing a ledger file; pending → settled timing.
