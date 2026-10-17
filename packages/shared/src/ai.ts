@@ -2,6 +2,12 @@ import { z } from 'zod';
 import { ConditionSchema, EscrowSchema } from './domain.ts';
 import { ExplanationSourceSchema, LogEventSchema } from './events.ts';
 
+// AI service contracts: docs/CONTRACTS.md §4 "AI service `apps/ai`".
+
+export const ParseRequestSchema = z.object({
+  title: z.string(),
+  rawText: z.string().min(1),
+  amountDisplay: z.string(),       // e.g. "50" — already formatted for humans
 export const ParseRequestSchema = z.object({
   title: z.string(),
   rawText: z.string().min(1),
@@ -12,6 +18,9 @@ export const ParseRequestSchema = z.object({
 export type ParseRequest = z.infer<typeof ParseRequestSchema>;
 
 export const ParseResultSchema = z.object({
+  conditions: z.array(ConditionSchema), // already validated
+  summary: z.string(),
+  clarifications: z.array(z.string()),
   conditions: z.array(ConditionSchema), // already validated; may include client_review
   summary: z.string(),
   clarifications: z.array(z.string()), // things that can't be agreed yet (e.g. "the hash I'll send later")
@@ -27,6 +36,7 @@ export const ExplainRequestSchema = z.object({
 });
 export type ExplainRequest = z.infer<typeof ExplainRequestSchema>;
 
+/** One SSE `data:` payload from `POST /explain`: deltas, then a final `{ done: true, text }`. */
 /** One SSE `data:` payload from `POST /explain`: deltas, then a final `{ done: true, text, source? }`. */
 export const ExplainStreamChunkSchema = z.union([
   z.object({ done: z.literal(true), text: z.string(), source: ExplanationSourceSchema.optional() }),

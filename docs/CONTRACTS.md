@@ -259,7 +259,7 @@ It never appears in `Escrow`, `LogEvent.data`, WebSocket messages or logs. Other
 | ------ | ---- | ---- | ------- |
 | GET  | `/health` | – | `{ ok, model, loaded, device }` |
 | POST | `/parse` | `{ title, rawText, amountDisplay, assetTicker, deadline }` | `ParseResult` |
-| POST | `/explain` | `{ event: LogEvent, escrow: Escrow }` | `text/event-stream` of `{ text }` deltas, final `{ done: true, text }` |
+| POST | `/explain` | `{ event: LogEvent, escrow: Escrow }` | `text/event-stream` of `{ text }` deltas, final `{ done: true, text, source? }` (`source`: `'ai' \| 'template'`) |
 | POST | `/explain/sync` | same | `{ text, source }` (non-streaming fallback) |
 | POST | `/review` | `ReviewRequest` | `AiReview` (§1); advisory only |
 

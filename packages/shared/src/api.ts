@@ -1,3 +1,5 @@
+// Route constants (docs/CONTRACTS.md §4).
+// TODO(WS3): AGENT_ROUTES and PARTY_ROUTES + their request/response schemas.
 import { z } from 'zod';
 import { AmountSchema, EscrowSchema, IsoDateSchema, PartyRoleSchema, Sha256HexSchema } from './domain.ts';
 import { DeliveryFileSchema } from './ai.ts';
@@ -35,6 +37,7 @@ export const AI_ROUTES = {
   parse: '/parse',
   explain: '/explain',
   explainSync: '/explain/sync',
+} as const;
   review: '/review',
 } as const;
 
