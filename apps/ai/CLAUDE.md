@@ -31,7 +31,7 @@ npm run eval:explain -w apps/ai         # the demo's event sequence through /exp
 `src/index.ts` entry · `server.ts` routes/SSE · `llm.ts` QVAC engine (lazy import, priority limiter, cancel on
 timeout) · `parse.ts` model → retry → fallback · `postprocess.ts` guards + cross-check · `fallback.ts`
 deterministic parser · `explain.ts` + `facts.ts` + `templates.ts` explanations · `review.ts` advisory review
-(planned) · `prompts.ts` versioned prompts · `mock.ts` AI_MODE=mock · `evalCheck.ts` eval scoring. Probes
+· `colours.ts` colour names + warm/cool for `/review` · `glob.ts` path-pattern matching · `prompts.ts` versioned prompts · `mock.ts` AI_MODE=mock · `evalCheck.ts` eval scoring. Probes
 live in `scratch/` (git-ignored).
 
 ## What `/explain` reads from `event.data` (tell WS3)
@@ -41,8 +41,11 @@ the failing test name is parsed from `evidence.stdoutTail`), `results` (`Verific
 `verify.finished`), `decision` (the `Decision`, for `decision.made`), `txid`, `amount` (base units, if not the
 escrow amount), `message` (for `error`). The SSE `done` message's `text` is **authoritative**: it can differ
 from the streamed deltas when a guard swaps in the template, so the agent must replace, not append.
-Client review (planned): `decision` with `action: 'await_approval'` and `pending` (the `client_review` ids);
-`deliveryN` + `reason` (for `review.disputed`); `deliveryN` + `reviewDueAt` (for `review.expired`).
+Checked against `apps/agent/src/orchestrator.ts` on `main`: the agent sends the delivery number as `delivery`
+(also accepted: `n`, `deliveryN`), spreads the `Decision` at the top of `decision.made` data (`action`,
+`reason`, `pending`), sends `passed` + `total` for `verify.finished`, and for `error` sends the plain-English
+message as the title (raw error in `detail`, which we ignore on purpose). `review.report_ready` counts come
+from `delivery.review` in the escrow, which the agent stores before recording the event.
 Explanations must never quote the AI review's opinions as if they were the decision.
 
 ## Model constants
@@ -75,6 +78,20 @@ The 4B does not fit in 4 GB VRAM next to the KV cache and runs ~8× slower, so *
 fallback (then 0.8B on CPU). First completion after load is slow (Vulkan shader compile), hence the warm-up.
 Eval (parse-v2 + guards, 2B): **10/10** from the model. Explanations (explain-v3): 15/16 from the model, the
 16th correctly rejected by a guard and replaced by its template. Models cache in `~/.qvac/models`.
+Re-run on 2026-10-17 after client review: parse-v3 **17/17** from the model (avg 4.6 s, max 11.4 s on
+`two-hashes`); explain-v3 15/16 (the `wait` decision still falls back to its template).
+`/review` (review-v2, 2B, landing fixtures, ~3 KB of excerpts): 4.3–5.8 s. Integration 1 (agent on another
+laptop over an iPhone hotspot): `/parse` 3–4 s, `/explain` 0.5–0.95 s, all explanations from the model.
+
+Probe: `npx tsx scratch/probe-review.ts [runs]` replays `landing-v1/-v2/-inject` through the running `/review`
+N times each, built with the agent's own `buildReviewFiles`. Always use N ≥ 6: the fence nonce makes every
+prompt different, so a single run proves nothing (review-v1 looked right once and was wrong 5/6 times).
+
+| Prompt | landing-v1 → unmet | landing-v2 → met | landing-inject → not met |
+| ------ | ------------------ | ---------------- | ------------------------ |
+| review-v1 | 1/6 (5× looks_met) | 6/6 | 6/6 |
+| review-v2 colour facts + guard | 3/6 (3× withheld by guard) | 6/6 | 6/6 |
+| review-v2 + "every part" rule | **8/8** | **8/8** | **8/8** |
 
 ## QVAC API facts (verified in docs, SDK v0.21, Oct 2026)
 - `import { loadModel, completion, unloadModel, cancel } from '@qvac/sdk'`; Node ≥ 22.17; ESM.
@@ -207,5 +224,14 @@ passes all 17.
   `tests/**/*.test.js`; `contract.*pdf` + a hash without `fileName`). Either can fail correct work. Guards: a
   concrete file name must appear whole in the agreement; a fuzzy glob matching exactly one named file becomes
   that file; a hash's missing or invented `fileName` is taken from the file named next to the hash.
+- **2B can't tell warm from cool in hex.** In Integration 1 it said landing-v1 "looks met" because navy
+  `#1e3a5f` and blue `#3b82f6` "are warm colors". It named them right but got the temperature wrong. Fix
+  (review-v2): `colours.ts` computes each hex colour's name + warm/cool/neutral (HSL hue, chroma < 0.15 =
+  neutral, comments skipped) and the prompt lists them as facts. A guard withholds "looks met" on a warm/cool
+  criterion when every coloured value is the opposite temperature. Even with correct facts, the 2B still
+  answered "looks met" when the note said "cool" (it judged only the "clean" half of "clean and warm"), until
+  the prompt said a multi-part criterion is met only if every part is.
+- **Avast's firewall overrides Windows Firewall** on Borna's laptop. If other laptops can't reach :4300, set
+  the network to trusted in Avast first. `192.168.56.1` is a VirtualBox adapter, not the LAN IP.
 - **Don't run `npm install` while `npm run dev:ai` is running** on Windows: npm re-extracts `bare.exe` and
   the llama.cpp addon that the service has loaded, which fails and can crash the service.

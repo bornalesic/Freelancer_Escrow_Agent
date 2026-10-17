@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import type { GenerateOptions, LlmEngine } from '../src/llm.ts';
 import {
   INJECTION_NOTE, INJECTION_SUFFIX, TEMPLATE_NOTE, UNGROUNDED_NOTE,
-  detectInjection, filesForPrompt, isNoteGrounded, reviewDelivery,
+  colourNote, detectInjection, filesForPrompt, isNoteGrounded, reviewDelivery,
 } from '../src/review.ts';
 import { escrow, landingEscrow } from './fixtures.ts';
 
@@ -75,6 +75,22 @@ describe('reviewDelivery', () => {
 
     const unmet = await reviewDelivery(request(INDEX_INJECT), deps(fakeEngine(answer('The header is dark blue.', 'looks_unmet')).engine));
     expect(unmet.items[0]).toEqual({ conditionId: 'c3', opinion: 'looks_unmet', note: `The header is dark blue.${INJECTION_SUFFIX}` });
+  });
+
+  it('gives the model code-computed colour names and temperatures', async () => {
+    const { engine, prompts } = fakeEngine(answer('The header in styles.css is blue.', 'looks_unmet'));
+    await reviewDelivery(request(), deps(engine));
+    expect(prompts[0]).toContain('- #1e3a8a: blue (cool)');
+  });
+
+  it('withholds "looks met" on warm colours when every colour in the delivery is cool', async () => {
+    const r = await reviewDelivery(request(), deps(fakeEngine(answer('The header uses #1e3a8a, a warm colour.', 'looks_met')).engine));
+    expect(r.items[0]).toEqual({ conditionId: 'c3', opinion: 'unsure', note: colourNote('warm', [{ hex: '#1e3a8a', name: 'blue' }]) });
+    expect(r.items[0]!.note).toContain('cool (blue #1e3a8a) and none are warm');
+
+    const warm: ReviewRequest = { ...request(), files: [{ path: 'styles.css', sizeBytes: 40, excerpt: 'header { background: #c2410c; }' }] };
+    const ok = await reviewDelivery(warm, deps(fakeEngine(answer('styles.css uses #c2410c, a burnt orange.', 'looks_met')).engine));
+    expect(ok.items[0]).toMatchObject({ opinion: 'looks_met' });
   });
 
   it('marks an item unsure when the model skips it', async () => {

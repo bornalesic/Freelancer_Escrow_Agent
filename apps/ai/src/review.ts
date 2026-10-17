@@ -1,5 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import { AiReviewSchema, isAutomaticCondition, type AiReview, type ClientReviewCondition, type ReviewOpinion, type ReviewRequest } from '@escrow/shared';
+import { colourContradiction, colourFactLines, colourFacts } from './colours.ts';
 import type { LlmEngine } from './llm.ts';
 import { extractJson } from './postprocess.ts';
 import { REVIEW_SYSTEM, reviewOutputSchema, reviewUserPrompt } from './prompts.ts';
@@ -9,6 +10,7 @@ import { REVIEW_SYSTEM, reviewOutputSchema, reviewUserPrompt } from './prompts.t
 //  - excerpts are fenced with a random marker and HTML comments (invisible on the page) are removed,
 //  - text aimed at the reviewer (prompt injection) is detected and turns "looks met" into "unsure",
 //  - a note may only mention files and colour values that really are in the delivery,
+//  - "looks met" on a warm/cool criterion is withheld when every colour in the delivery is the opposite,
 //  - on any failure every item is "unsure" with a template note.
 
 export interface ReviewDeps {
@@ -28,6 +30,13 @@ export const INJECTION_NOTE = 'The delivery contains text addressed to the AI re
 export const INJECTION_SUFFIX = ' Note: the delivery also contains text addressed to the AI reviewer.';
 export const UNGROUNDED_NOTE = 'The AI opinion mentioned a file or value that is not in the delivery, so it was discarded; please check this yourself.';
 const EMPTY_NOTE = 'The AI gave no reason, so its opinion was discarded; please check this yourself.';
+
+/** Code-written note when the model's "looks met" contradicts the delivery's colours. */
+export function colourNote(wanted: string, found: { hex: string; name: string }[]): string {
+  const list = found.slice(0, 4).map((f) => `${f.name} ${f.hex}`).join(', ');
+  const opposite = wanted === 'warm' ? 'cool' : 'warm';
+  return `The AI said this looks met, but the delivery's colours are ${opposite} (${list}) and none are ${wanted}, so its opinion was discarded; please check this yourself.`;
+}
 
 const INJECTION = [
   /\b(note|message|instructions?)\s+(to|for)\s+(the\s+)?(ai|reviewer|assistant|model|llm|grader|evaluator)\b/i,
@@ -104,12 +113,13 @@ export async function reviewDelivery(req: ReviewRequest, deps: ReviewDeps): Prom
   const injected = detectInjection(req.files);
   if (injected) deps.log(`review ${req.escrow.id}#${req.deliveryN}: guard: delivery contains text aimed at the reviewer`);
   const { fileList, fencedFiles } = filesForPrompt(req.files, randomBytes(4).toString('hex'));
+  const colours = colourFacts(req.files.map((f) => f.excerpt));
 
   try {
     const out = await engine.generate({
       messages: [
         { role: 'system', content: REVIEW_SYSTEM },
-        { role: 'user', content: reviewUserPrompt({ rawText: req.escrow.rawText, conditions, fileList, fencedFiles }) },
+        { role: 'user', content: reviewUserPrompt({ rawText: req.escrow.rawText, conditions, fileList, fencedFiles, colours: colourFactLines(colours) }) },
       ],
       predict: 60 + 110 * conditions.length,
       jsonSchema: reviewOutputSchema(conditions),
@@ -132,6 +142,12 @@ export async function reviewDelivery(req: ReviewRequest, deps: ReviewDeps): Prom
         note = INJECTION_NOTE;
       } else if (injected) {
         note += INJECTION_SUFFIX;
+      }
+      const clash = opinion === 'looks_met' ? colourContradiction(c.description, colours) : undefined;
+      if (clash) {
+        deps.log(`review ${req.escrow.id}#${req.deliveryN} ${c.id}: guard: "looks met" withheld, colours are not ${clash.wanted}: ${JSON.stringify(note)}`);
+        opinion = 'unsure';
+        note = colourNote(clash.wanted, clash.found);
       }
       return { conditionId: c.id, opinion, note };
     });
