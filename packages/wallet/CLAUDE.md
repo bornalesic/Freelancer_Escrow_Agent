@@ -16,17 +16,19 @@ only — the native RGB binaries have no Windows build.
    The seed only applies when the ledger file is first created, so after changing asset env vars
    delete `.mock-ledger.json`.
 2. **`RgbWdkWallet`** wrapping `@utexo/wdk-wallet-rgb` (`WalletManagerRgb` → `getAccount()`):
-   - `init()`: open manager with `{ network, dataDir, indexerUrl, transportEndpoint }` from env;
-     `registerWallet()`; if fewer than `MIN_FREE_UTXOS` (default 5) free UTXOs, `createUtxos`.
-   - `createInvoice()`: `receiveAsset({ witness: false, assetId, amount })`; return invoice + recipient id.
-   - `pay()`: `quoteTransfer` (abort if fee > `MAX_FEE_SAT`), then `transfer({ token, recipient, amount,
-     feeRate, minConfirmations })`.
+   - `init()`: open manager with `{ network, dataDir, indexerUrl, transportEndpoint, transferMaxFee }`
+     from env; `registerWallet()`; if fewer than `MIN_FREE_UTXOS` (default 5) free UTXOs, `createUtxos`.
+   - `createInvoice()`: `receiveAsset({ witness: false, assetId?, amount, minConfirmations,
+     durationSeconds })`, bound only if the wallet already knows the asset; return invoice + recipient id.
+   - `pay()`: `transfer({ token, recipient, amount, feeRate, minConfirmations })`. It quotes internally
+     and enforces `transferMaxFee` (`MAX_FEE_SAT`) itself.
    - `refresh()`: `refreshWallet()`; `transfers()`: map `listTransfers`/`getTransfers` output to
      `TransferSummary` (`pending|settled|failed`, keep `rawStatus`).
    - `waitForTransfer()`: loop `refresh()` + `transfers()` every `WALLET_POLL_MS` (env; 2000 on
      regtest, ≥ 10000 on signet: KaleidoSwap asked teams not to poll their esplora in tight loops)
      until settled/failed/timeout.
-   - `sign()`: account `sign(message)` + `getAddress()`.
+   - `sign()`: account `sign(message)` + the address `registerWallet()` returned (`getAddress()` hands
+     out a new one each call).
    - Serialize all calls through one in-process queue (rgb-lib does not like concurrent calls).
 3. **Factory** `createWallet({ role, mode })` reading env: `WALLET_MODE`, `RGB_NETWORK`, `RGB_DATA_DIR`,
    `RGB_INDEXER_URL`, `RGB_TRANSPORT_ENDPOINT`, `<ROLE>_MNEMONIC`.
@@ -52,10 +54,11 @@ only — the native RGB binaries have no Windows build.
 - Networks: the 2.0.3 types say `mainnet | testnet | regtest`, but the wrapper passes `network` straight
   to rgb-sdk, which also accepts `signet` (UTEXO confirmed plain signet works; `signetcustom` does not).
   Extend the local type augmentation to include `'signet'` if we switch.
-- ~~The 2.0.3 TypeScript types omit `dataDir`, `indexerUrl`, `transportEndpoint`~~ — **wrong, checked
-  against the installed 2.0.3.** `RgbWalletConfig` declares all three, plus `keys` and
-  `transferMaxFee`. No type augmentation is needed for them. The only augmentation we may need is
-  `'signet'` on `network`, which really is typed `'mainnet' | 'testnet' | 'regtest'`.
+- The 2.0.3 TypeScript types **do** omit `dataDir`, `indexerUrl`, `transportEndpoint` and
+  `transferMaxFee`. (An earlier note here said otherwise: the JSDoc `@typedef` lists them, but the
+  emitted `export type RgbWalletConfig` that TypeScript actually uses has only `network` and `keys`.)
+  The runtime accepts all of them, so `RgbWdkWallet` builds its own config type and casts at the
+  constructor. `network` is typed `'mainnet' | 'testnet' | 'regtest'`; the same cast covers `'signet'`.
 - Useful account methods: `registerWallet`, `createUtxos({ upTo, num, size, feeRate })`,
   `issueAssetNia({ ticker, name, precision, amounts })`, `receiveAsset({ witness, assetId, amount })`,
   `transfer({ token, recipient, amount, feeRate, minConfirmations })`, `quoteTransfer`,
@@ -169,10 +172,8 @@ Probe folder: `~/scratch/wdk-probe` in WSL **Ubuntu-24.04**. Everything below wa
   `transfer`, `quoteTransfer`, `sendTransaction`, `sign`, `verify`, `getTransfers`,
   `getTransactionReceipt`, `getTransferReceipt`, `toReadOnlyAccount`, `registerWallet`.
   Do not blanket-`await` — and the serializing queue must handle sync calls too.
-- **`registerWallet()` is contradictory between docs and types**: the package README shows it used
-  synchronously ("synchronous in v2", `const { address, btcBalance } = account.registerWallet()`) but
-  `types/src/wallet-account-rgb.d.ts` declares `Promise<RegisterWalletResult>`. Check at runtime
-  before relying on either. `await` works in both cases, so prefer `await`.
+- **`registerWallet()` is async.** The package README shows it used synchronously ("synchronous in
+  v2"), but the source is `async registerWallet ()` and the shapes probe saw a Promise. `await` it.
 - `manager.getAccount(index?)` is **async** and only index 0 is valid. `getAccountByPath()` returns
   `Promise<never>` — it is not supported; do not plan on derivation paths.
 - `transferMaxFee` is a config field on `RgbWalletConfig` — use it for `MAX_FEE_SAT` instead of only
@@ -260,8 +261,58 @@ mine 100+ more blocks before using the funds.
 `issueAssetNia` ~90 ms · `receiveAsset` ~50 ms · `refreshWallet` 1–250 ms · `getBalance` ~125 ms ·
 `getTokenBalance` ~1 ms. Confirms the sync/async split listed above.
 
+### From the shapes probe (2026-10-17, regtest, all steps green)
+Script: `~/scratch/wdk-probe/probe-shapes.mjs` in Ubuntu-24.04 (full output in `probe-shapes-log.txt`
+next to it): treasury issues TUSDT, then unbound and bound invoices, payments, errors, sign. The
+`.d.ts` files are wrong in several places, so `RgbWdkWallet` declares its own narrow types for the
+account from **these** runtime shapes instead of using the package's.
+
+- **Transfer rows** (`listTransfers`): `{ idx, batchTransferIdx, createdAt, updatedAt` (unix seconds)`,
+  status, requestedAssignment: { Fungible }, assignments: [{ Fungible }], kind, txid, recipientId,
+  receiveUtxo, changeUtxo, expiration, transportEndpoints, invoiceString, consignmentPath }`. `status`
+  and `kind` are **strings** (`"WaitingCounterparty"`, `"ReceiveBlind"`, `"Send"`, `"Issuance"`) even
+  though the `.d.ts` declares numeric enums. There is **no `amount` field**.
+- **Amounts.** On a `Send` row `requestedAssignment.Fungible` is what was sent and `assignments` is the
+  **change**. On a receive row `assignments` is what actually arrived. **A recipient accepts and
+  settles an underpayment**: invoice for 2, paid 1 → `Settled` with `assignments: [{Fungible: 1000000}]`,
+  and nothing stopped the sender either. So the incoming amount must come from `assignments`, or the
+  agent's "received less than expected" check never fires.
+- **An invoice is a transfer row from the moment it is created**: `ReceiveBlind`, `WaitingCounterparty`,
+  `txid: null`, `assignments: []`, before anyone pays. Reported as a transfer it would make the agent
+  log "payment seen" early, so `RgbWdkWallet.transfers()` drops rows that have received nothing.
+- **A wallet that has never seen the asset:** `listTransfers(assetId)` and `getAssetBalance(assetId)`
+  both throw `RgbLib(AssetNotFound)`, and its unbound invoice shows up only in `listTransfers()` with no
+  argument (which lists asset-less rows only). After the recipient's first refresh the row moves under
+  the asset (`WaitingConfirmations`, `txid` set).
+- **`transfer().hash` equals the sender row's `txid`**, and the recipient row's once it is picked up. The
+  agent matches payouts by txid, so this has to hold.
+- **While an outgoing payment is in flight:** `settled` is unchanged, `future` is reduced, `spendable` is
+  **0** (the whole allocation is locked). **So a wallet can have only one outgoing payment at a time**:
+  a second `transfer()` fails with `InsufficientAssignments { available: { fungible: 0 } }` until the
+  first settles. For the agent: releasing one escrow blocks paying out another until it settles.
+  `MockWallet` lowers `settled` immediately; that difference is known and harmless for the demo.
+- `receiveAsset` passes `minConfirmations` and `durationSeconds` through (expiry exactly 600 s; recipient
+  settled after 1 block). **`BigInt` amounts are rejected** (`Do not know how to serialize a BigInt`):
+  pass a `number`, after checking it is a safe integer.
+- **Each open invoice reserves one colorable UTXO** (`pendingBlinded`) until it is paid or expires. With
+  none free, `receiveAsset` throws `RgbLib(InsufficientAllocationSlots)`; `createUtxos({ upTo: true,
+  num: 5 })` made 5 more. Free means `colorable && rgbAllocations.length === 0 && !pendingBlinded`.
+- **Error messages** (`err.message`): already-paid invoice → `RGB transfer failed: RgbLib(RecipientIDAlreadyUsed)`;
+  not enough → `RgbLib(InsufficientAssignments { ..., available: ... })`, thrown by the internal
+  `quoteTransfer` and therefore **not** prefixed; bad invoice → `RgbLib(InvalidInvoice { details:
+  "invalid contract ID." })`.
+- BTC: `getBtcBalance().vanilla.settled` stays 0 until `syncWallet()`, but `spendable` is right without
+  it. `getAddress()` returns a **new address on every call**; keep the one `registerWallet()` returned.
+- `issueAssetNia()` returns the asset flat (the `.d.ts` says `{ asset }`); `listAssets()` returns
+  `{ nia, uda, cfa, ifa }` arrays, each asset with `balance: { settled, future, spendable }`.
+- `sign()` returns a base64 string and `verify()` accepts it. `failTransfers({ batchTransferIdx: 5 })`
+  throws "numbers must be passed as strings"; not explored further, since `EscrowWallet` does not need it.
+- **The Ubuntu-24.04 distro shuts down when idle**, which stops Docker. On the next start the containers
+  come back with the chain intact but bitcoind's `miner` wallet **unloaded**: `loadwallet miner` before
+  mining from it. Keep a 24.04 terminal open during the demo.
+
 ### From the hackathon
-(fill in: what errors look like when UTXOs run out, ...)
+(fill in)
 
 ## Tests
 - `MockWallet`: vitest — pay between two instances sharing a ledger file; pending → settled timing.

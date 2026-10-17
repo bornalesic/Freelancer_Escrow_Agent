@@ -4,6 +4,9 @@ export type { CreateWalletParams } from './factory.ts'
 export { MockWallet, WalletError, WalletTimeoutError, formatMockInvoice, parseMockInvoice } from './mock-wallet.ts'
 export type { MockWalletOptions } from './mock-wallet.ts'
 
+// Type only: a value export would load the native rgb-lib on import (see src/rgb-wdk-wallet.ts).
+export type { RgbWdkWalletOptions } from './rgb-wdk-wallet.ts'
+
 export { MOCK_RAW_STATUS, resolveLedgerPath } from './ledger.ts'
 export type { Ledger, LedgerHandle, LedgerSeed, LedgerTransfer } from './ledger.ts'
 
