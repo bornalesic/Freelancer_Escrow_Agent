@@ -1,1 +1,1 @@
-![House](images/House.jpg)
+![House](images/House.png)
