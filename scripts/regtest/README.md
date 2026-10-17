@@ -69,18 +69,49 @@ RPC credentials are baked into the bitcoind image as an `-rpcauth` hash, so they
 
 ## Windows 10 laptops: LAN reachability
 `networkingMode=mirrored` requires Windows 11 22H2+. On Windows 10, WSL sits behind a NAT and these
-ports are not reachable from other laptops until you add portproxy rules. Run
-`scratch/wsl-lan-setup.ps1` in an **admin** PowerShell (firewall rule + `netsh interface portproxy`
-for 3000/4000/4101/4102/5173/18443/50001). The WSL IP changes on every restart — re-run it after
-`wsl --shutdown` or a reboot.
+ports are not reachable from other laptops until you add portproxy rules: use the `netsh interface
+portproxy` loop and the firewall rule in `docs/INTEGRATION_PLAN.md`, Phase 0, in an **admin**
+PowerShell. The WSL IP changes on every restart — re-run it after `wsl --shutdown` or a reboot.
 
 ## Multi-laptop sequence for the demo
-1. Agent laptop: `up -d`, then `npm run demo:reset` (treasury, agent wallet, tUSDT issuance).
-2. Client and freelancer laptops: point `RGB_INDEXER_URL` / `RGB_TRANSPORT_ENDPOINT` at the agent
-   laptop's LAN IP, run `npm run setup:role -- --role client` (or `freelancer`): prints the BTC address.
-3. Agent laptop: fund those addresses from the treasury, mine, then each party laptop re-runs
-   `setup:role` to create UTXOs. Treasury sends 100 tUSDT to the client.
-Write the final, tested version of this sequence here.
+Every command runs in WSL Ubuntu 24.04 from the repo root. `.env.local` on each laptop as in
+`docs/INTEGRATION_PLAN.md`, Phase 3 — above all `RGB_INDEXER_URL` and `RGB_TRANSPORT_ENDPOINT` with the
+**agent laptop's LAN IP on every laptop**, the agent laptop included: the transport endpoint is written
+into every invoice (`...&endpoints=rpc://<it>/json-rpc`), and the payer posts its payment there.
+
+1. **Agent laptop:** `docker compose -f scripts/regtest/compose.yaml up -d`, then `... ps` shows three
+   services.
+2. **Client and freelancer laptops:** `npm run setup:role -- --role client` (or `freelancer`). It saves
+   the role's new mnemonic in `.env.local` (never printed) and prints a BTC address. Send that to the
+   agent laptop. It prints a fresh address on every run; all of them belong to the same wallet.
+3. **Client laptop:** start the party server in real mode (`WALLET_MODE=real`, then
+   `npm run dev:party:client`). Its `/health` reports "not enough BTC" until it is funded; it retries
+   every 15 s and creates its own UTXOs once the BTC is there. The freelancer laptop may start now too.
+4. **Agent laptop:** `npm run demo:setup -- --client-address <address> --freelancer-address <address>`
+   (about a minute). It funds all four wallets with BTC, creates the treasury's and agent's UTXOs,
+   issues a fresh TUSDT, asks the client's party server (`CLIENT_PARTY_URL`) for a 100 TUSDT invoice,
+   pays it, mines until it settles, and writes `ESCROW_ASSET_ID` into `.env.local`.
+5. **Client and freelancer laptops:** copy the `ESCROW_ASSET_ID=` line into `.env.local`. Check: the
+   client party server's `GET /wallet` shows 100 TUSDT. With the party server stopped,
+   `npm run setup:role -- --role <role>` prints the balances and free UTXOs.
+6. **Between runs (agent laptop):** stop the agent, keep the client party server running, then
+   `npm run demo:reset -- --client-address <address> --freelancer-address <address>`. The treasury and
+   agent get new wallets and there is a new asset; the party laptops keep their wallets and just receive
+   it. Copy the new `ESCROW_ASSET_ID` again.
+
+**One laptop** (rehearsal, stage fallback): `npm run demo:setup` with no addresses creates all four
+wallets on this laptop; then start the agent and both party servers here.
+
+Tested on one machine on 2026-10-17, with the client's laptop simulated by a second env file and its own
+real-mode party server: steps 2–5 and `demo:reset` work. Not yet run across real laptops.
+
+Gotchas the scripts handle, so you do not have to:
+- BTC comes from bitcoind's `miner` wallet with `sendtoaddress`, never by mining to a wallet: rgb-lib
+  picks immature coinbase outputs and the broadcast fails.
+- After the WSL distro was idle, Docker restarts the containers and bitcoind's `miner` wallet is
+  unloaded; `demo:setup` waits for bitcoind and loads it.
+- `setup:role` and `demo:reset` refuse while a party server or the agent runs on that laptop: two
+  processes on one wallet `dataDir` lose its RGB state.
 
 ## Fallback
 If laptops cannot reach each other at the venue: run everything (stack, agent, both parties) on the agent

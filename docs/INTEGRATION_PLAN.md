@@ -65,21 +65,26 @@ both parties (4101, 4102, for balances).
 
 ### Phase 1 — WS1 writes the setup scripts (the blocker)
 Spec is in `packages/wallet/CLAUDE.md` → "Deliver in this order", step 4. In short:
-- [ ] `scripts/setup-demo.ts` (agent laptop): treasury + agent wallets → mine 101 blocks to treasury →
+- [x] `scripts/setup-demo.ts` (agent laptop): treasury + agent wallets → mine 101 blocks to treasury →
       send BTC to agent, client and freelancer addresses → mine → `createUtxos` → treasury issues NIA
       `TUSDT` (precision 6, supply 1,000,000) → send 100 TUSDT to the client → mine → refresh all → print
-      the asset id and write `ESCROW_ASSET_ID` into `.env.local`.
-- [ ] `scripts/setup-role.ts --role client|freelancer` (party laptops): open the wallet, print its BTC
+      the asset id and write `ESCROW_ASSET_ID` into `.env.local`. *(As built, BTC comes from bitcoind's
+      `miner` wallet instead of coinbases mined to the treasury, which rgb-lib cannot spend yet.)*
+- [x] `scripts/setup-role.ts --role client|freelancer` (party laptops): open the wallet, print its BTC
       address for the treasury to fund, then `createUtxos` once funded and print the balance.
-- [ ] `scripts/reset-demo.ts`: wipe data dirs + mock ledger, then setup again.
-- [ ] Document the exact cross-laptop sequence in `scripts/regtest/README.md`.
+- [x] `scripts/reset-demo.ts`: wipe data dirs + mock ledger, then setup again.
+- [x] Document the exact cross-laptop sequence in `scripts/regtest/README.md`.
+
+Done 2026-10-17 (WS1), tested on one laptop with the client's laptop simulated; not yet across laptops.
 
 Until the scripts exist, the cross-laptop wiring (Phase 0) and the mock path can still be checked.
 
 ### Phase 2 — stack and wallets (WS1 drives, each laptop owner helps)
 1. Agent laptop: `docker compose -f scripts/regtest/compose.yaml up -d`, then `... ps` shows 3 services.
-2. Client and freelancer laptops: `setup-role` prints an address → send it to WS1.
-3. Agent laptop: `npm run demo:setup` funds everyone, issues TUSDT, sends 100 to the client.
+2. Client and freelancer laptops: `npm run setup:role -- --role <role>` prints an address → send it to
+   WS1. Then start the client's party server in real mode: `demo:setup` gets the 100 TUSDT invoice from it.
+3. Agent laptop: `npm run demo:setup -- --client-address <a> --freelancer-address <b>` funds everyone,
+   issues TUSDT, sends 100 to the client. Exact steps: `scripts/regtest/README.md`.
 4. Copy **the same `ESCROW_ASSET_ID`** into the agent, client and freelancer `.env.local`.
 5. Check: client wallet 100 TUSDT, freelancer 0, agent 0, every wallet with ≥ 5 free UTXOs.
 
@@ -101,7 +106,8 @@ Until the scripts exist, the cross-laptop wiring (Phase 0) and the mock path can
 
 ⚠ **Use the agent laptop's LAN IP for the transport endpoint even on the agent laptop.** The endpoint is
 written into every RGB invoice, and the payer posts the consignment to it; `localhost` in an invoice
-points the client's wallet at the client's own laptop. (WS1: confirm against the invoice string.)
+points the client's wallet at the client's own laptop. (Confirmed by WS1: the invoice string ends in
+`&endpoints=rpc://<the recipient's RGB_TRANSPORT_ENDPOINT>/json-rpc`, and the payer posts there.)
 
 Start order: AI → regtest stack → agent → parties → web.
 - AI laptop (PowerShell): `npm run dev:ai`, wait for `loaded:true` on `/health`.
@@ -132,9 +138,9 @@ green, projector footer shows the model, client 100 / freelancer 0 / held 0.
 ## Checklist per workstream
 
 **WS1 — Wallet**
-- [ ] Phase 1 scripts (blocker): `setup-demo.ts`, `setup-role.ts`, `reset-demo.ts`, README sequence.
+- [x] Phase 1 scripts (blocker): `setup-demo.ts`, `setup-role.ts`, `reset-demo.ts`, README sequence.
 - [ ] Confirm the transport endpoint in invoices (⚠ above) and that the regtest ports are reachable from
-      the party laptops (Phase 0).
+      the party laptops (Phase 0). *Endpoint confirmed; reachability needs the real laptops.*
 - [ ] Drive Phase 2; run the client and freelancer party servers in real mode.
 
 **WS2 — AI** (nothing changes for the AI in real-wallet mode)
