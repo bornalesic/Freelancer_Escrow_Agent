@@ -7,6 +7,7 @@ import type { Escrow, EscrowDetailResponse, LogEventType, WsMessage } from '@esc
 import { buildApp, type AgentApp } from '../src/app';
 import { loadConfig, type Config } from '../src/config';
 import { StubWallet } from '../src/wallet/stub';
+import { safeNow } from '../src/util';
 import { slugifyProject, tmpDir, zipBuffer } from './helpers';
 
 // ---- a fake apps/ai: /parse (with one hallucinated hash) and streaming /explain ---------------
@@ -140,8 +141,8 @@ async function start(config: Config) {
     return { status: res.status, body: (await res.json()) as any };
   };
   /** create → propose → accept ×2 → fund. Returns the escrow id and the clientToken. */
-  const fundedEscrow = async (rawText: string) => {
-    const created = await call('POST', '/escrows', { title: 'Landing', rawText, amount: '30000000', deadline: deadlineIn(30 * 60_000) });
+  const fundedEscrow = async (rawText: string, deadlineMs = 30 * 60_000) => {
+    const created = await call('POST', '/escrows', { title: 'Landing', rawText, amount: '30000000', deadline: deadlineIn(deadlineMs) });
     expect(created.status).toBe(201);
     const id = created.body.id as string;
     const proposed = await waitFor(id, (x) => x.escrow.state === 'PROPOSED', 'PROPOSED');
@@ -375,6 +376,8 @@ describe('escrow flow (stub wallet)', () => {
       'Build a one-page landing site for my bakery as index.html. The page should look clean and use warm colours.',
     );
     expect(clientToken).toMatch(/^[0-9a-f]{64}$/);
+    const proposed = (await t.detail(id)).events.find((e) => e.type === 'terms.proposed')!;
+    expect(proposed.title).toBe('AI proposed 1 check and 1 item for the client to judge');
 
     // v1: automatic check passes → AWAITING_APPROVAL with a review window and the AI's opinion
     expect((await t.deliverFiles(id, landing('#1e3a8a'), 'landing-v1')).status).toBe(200);
@@ -465,5 +468,109 @@ describe('escrow flow (stub wallet)', () => {
     ]);
     expect(d.events.filter((e) => e.type === 'decision.made').at(-1)!.data).toMatchObject({ action: 'release' });
     expect((await t.call('POST', `/escrows/${id}/approve`, { deliveryN: 1, decision: 'approve', clientToken })).status).toBe(409);
+  });
+
+  // ---- edge cases: races, restarts, deadlines, hostile uploads -------------------------------
+
+  const REVIEW_TEXT = 'Build a one-page landing site for my bakery as index.html. The page should look clean and use warm colours.';
+
+  it('approve and dispute sent at the same time: exactly one wins, exactly one decision', async () => {
+    const t = await start(testConfig(ai.url));
+    agents.push(t.agent);
+    const { id, clientToken } = await t.fundedEscrow(REVIEW_TEXT);
+    await t.deliverFiles(id, landing('#ff8c42'), 'v1');
+    await t.waitFor(id, (x) => x.escrow.state === 'AWAITING_APPROVAL', 'AWAITING_APPROVAL');
+
+    const answer = (decision: string) =>
+      t.call('POST', `/escrows/${id}/approve`, { deliveryN: 1, decision, reason: 'no', clientToken });
+    const replies = await Promise.all([answer('approve'), answer('dispute'), answer('approve')]);
+    expect(replies.map((r) => r.status).sort()).toEqual([200, 409, 409]);
+
+    const d = await t.detail(id);
+    const answers = d.events.filter((e) => e.type === 'review.approved' || e.type === 'review.disputed');
+    expect(answers).toHaveLength(1);
+    expect(d.events.filter((e) => e.type === 'decision.made')).toHaveLength(2); // await_approval + the answer
+  });
+
+  it('two uploads at the same time: one is accepted, the other gets 409', async () => {
+    const t = await start(testConfig(ai.url));
+    agents.push(t.agent);
+    const { id } = await t.fundedEscrow(REVIEW_TEXT);
+    const replies = await Promise.all([
+      t.deliverFiles(id, landing('#111'), 'a'),
+      t.deliverFiles(id, landing('#222'), 'b'),
+    ]);
+    expect(replies.map((r) => r.status).sort()).toEqual([200, 409]);
+    expect((await t.detail(id)).escrow.deliveries).toHaveLength(1);
+  });
+
+  it('agent restart while waiting for the client: the token still works and the escrow carries on', async () => {
+    const config = testConfig(ai.url);
+    const t = await start(config);
+    agents.push(t.agent);
+    const { id, clientToken } = await t.fundedEscrow(REVIEW_TEXT);
+    await t.deliverFiles(id, landing('#ff8c42'), 'v1');
+    await t.waitFor(id, (x) => Boolean(x.escrow.deliveries[0]?.review), 'review');
+    await t.agent.app.close();
+
+    const again = await start(testConfig(ai.url, config.dataDir));
+    agents.push(again.agent);
+    expect((await again.detail(id)).escrow.state).toBe('AWAITING_APPROVAL');
+    const body = { deliveryN: 1, decision: 'approve', clientToken };
+    expect((await again.call('POST', `/escrows/${id}/approve`, { ...body, clientToken: 'f'.repeat(64) })).status).toBe(403);
+    expect((await again.call('POST', `/escrows/${id}/approve`, body)).status).toBe(200);
+    await again.waitFor(id, (x) => x.escrow.state === 'RELEASED', 'RELEASED');
+  });
+
+  it('the deadline alone never refunds work under review; a dispute after the deadline refunds', async () => {
+    const t = await start(testConfig(ai.url));
+    agents.push(t.agent);
+    const { id, clientToken } = await t.fundedEscrow(REVIEW_TEXT, 2500);
+    await t.deliverFiles(id, landing('#ff8c42'), 'v1');
+    let d = await t.waitFor(id, (x) => x.escrow.state === 'AWAITING_APPROVAL', 'AWAITING_APPROVAL');
+    // Past the deadline by the agent's own clock (safeNow can trail a stepping wall clock), then 3 ticker runs.
+    while (safeNow().getTime() < Date.parse(d.escrow.deadline)) await new Promise((r) => setTimeout(r, 50));
+    await new Promise((r) => setTimeout(r, 600));
+    expect((await t.detail(id)).escrow.state).toBe('AWAITING_APPROVAL');
+
+    const res = await t.call('POST', `/escrows/${id}/approve`, { deliveryN: 1, decision: 'dispute', reason: 'Too late and wrong', clientToken });
+    expect(res.body.state).toBe('REFUNDING');
+    d = await t.waitFor(id, (x) => x.escrow.state === 'REFUNDED', 'REFUNDED');
+    expect(d.events.filter((e) => e.type === 'decision.made').at(-1)!.data).toMatchObject({ action: 'refund' });
+  });
+
+  it('a zip that tries to escape its folder fails the checks instead of writing outside', async () => {
+    const t = await start(testConfig(ai.url));
+    agents.push(t.agent);
+    const { id } = await t.fundedEscrow(REVIEW_TEXT);
+    const AdmZip = (await import('adm-zip')).default;
+    const zip = new AdmZip();
+    zip.addFile('index.html', Buffer.from('<h1>x</h1>'));
+    zip.addFile('placeholder.txt', Buffer.from('evil'));
+    // adm-zip cleans names on addFile, so rename the entry in place to a hostile path.
+    zip.getEntry('placeholder.txt')!.entryName = '../../escaped.txt';
+    const fd = new FormData();
+    fd.set('payoutInvoice', 'mock:freelancer:x:1');
+    fd.set('file', new Blob([zip.toBuffer()]), 'evil.zip');
+    expect((await fetch(`${t.base}/escrows/${id}/deliveries`, { method: 'POST', body: fd })).status).toBe(200);
+
+    const d = await t.waitFor(id, (x) => x.escrow.state === 'FUNDED' && Boolean(x.escrow.deliveries[0]?.results), 'verified');
+    const r = d.escrow.deliveries[0]!.results![0]!;
+    expect(r.passed).toBe(false);
+    expect(r.evidence.error).toMatch(/Unsafe path/);
+    const dataDir = t.agent.store.dataDir;
+    for (const dir of [dataDir, path.join(dataDir, 'work'), path.join(dataDir, 'work', id)]) {
+      expect(fs.existsSync(path.join(dir, 'escaped.txt'))).toBe(false);
+    }
+    expect((await t.call('GET', `/escrows/${id}/deliveries/1/files`)).status).toBe(422);
+  });
+
+  it('approve on an unknown escrow → 404; before any delivery → 409', async () => {
+    const t = await start(testConfig(ai.url));
+    agents.push(t.agent);
+    const { id, clientToken } = await t.fundedEscrow(REVIEW_TEXT);
+    const body = { deliveryN: 1, decision: 'approve', clientToken };
+    expect((await t.call('POST', '/escrows/esc_nope/approve', body)).status).toBe(404);
+    expect((await t.call('POST', `/escrows/${id}/approve`, body)).status).toBe(409);
   });
 });

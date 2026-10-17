@@ -12,7 +12,8 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@escrow/shared": "*"
+    "@escrow/shared": "*",
+    "@utexo/wdk-wallet-rgb": "2.0.3"
   },
   "devDependencies": {
     "@types/node": "^22.10.0"

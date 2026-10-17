@@ -7,9 +7,12 @@
 // Config comes only from env vars listed in .env.example (root CLAUDE.md). Nothing here logs a
 // mnemonic, and nothing here hard-codes a host, port, network or asset id.
 
+import { join } from 'node:path'
+
 import type { EscrowWallet, Role, WalletMode } from './contract-types.ts'
 import { MockWallet, WalletError } from './mock-wallet.ts'
 import { resolveLedgerPath, type LedgerHandle, type LedgerSeed } from './ledger.ts'
+import { resolveFromRepoRoot } from './paths.ts'
 
 export interface CreateWalletParams {
   role: Role
@@ -33,6 +36,12 @@ const DEFAULT_MOCK_BTC_SAT = '100000000'
 function env(name: string): string | undefined {
   const raw = process.env[name]
   return raw === undefined || raw.trim() === '' ? undefined : raw.trim()
+}
+
+function requiredEnv(name: string): string {
+  const value = env(name)
+  if (value === undefined) throw new WalletError(`${name} is not set (see .env.example)`)
+  return value
 }
 
 function intEnv(name: string, fallback: number): number {
@@ -84,9 +93,10 @@ export function mockLedgerHandle(): LedgerHandle {
 }
 
 /**
- * Build the wallet for a role. The returned wallet is usable immediately; calling `init()` is still
- * correct (and required by the real implementation) but the mock seeds itself lazily, so forgetting
- * it will not silently produce an empty ledger.
+ * Build the wallet for a role. The mock comes back initialised (it seeds itself lazily, so forgetting
+ * `init()` will not silently produce an empty ledger). The real wallet does NOT: its `init()` opens
+ * the wallet and may create UTXOs, which can be slow or fail while the regtest stack is still coming
+ * up, so callers run it themselves and retry (apps/party and apps/agent both do).
  */
 export async function createWallet(p: CreateWalletParams): Promise<EscrowWallet> {
   const mode = resolveMode(p.mode)
@@ -114,10 +124,38 @@ export async function createWallet(p: CreateWalletParams): Promise<EscrowWallet>
     return wallet
   }
 
-  // RgbWdkWallet is next on the WS1 list. Fail loudly rather than silently falling back to mock:
-  // a demo that quietly runs on fake money is worse than one that refuses to start.
-  throw new WalletError(
-    'WALLET_MODE=real is not implemented yet (RgbWdkWallet is still being built). ' +
-    'Run with WALLET_MODE=mock for now.',
-  )
+  // Real mode never falls back to the mock: a demo that quietly runs on fake money is worse than one
+  // that refuses to start.
+  const mnemonicVar = `${p.role.toUpperCase()}_MNEMONIC`
+  const mnemonic = env(mnemonicVar)
+  if (mnemonic === undefined) {
+    throw new WalletError(`${mnemonicVar} is not set: put the ${p.role} wallet's mnemonic in .env.local`)
+  }
+
+  // Lazy: loading this module loads the native rgb-lib, which needs Linux with glibc >= 2.38. A static
+  // import would break mock mode everywhere else (Windows, Ubuntu 22.04).
+  let RgbWdkWallet: typeof import('./rgb-wdk-wallet.ts').RgbWdkWallet
+  try {
+    ({ RgbWdkWallet } = await import('./rgb-wdk-wallet.ts'))
+  } catch (err) {
+    throw new WalletError(
+      'WALLET_MODE=real needs the native RGB library, which did not load. It needs Linux with ' +
+      `glibc >= 2.38 (Ubuntu 24.04, not 22.04): ${err instanceof Error ? err.message : String(err)}`,
+    )
+  }
+
+  return new RgbWdkWallet({
+    role: p.role,
+    network,
+    mnemonic,
+    // One directory per role: never open the same dataDir from two processes.
+    dataDir: resolveFromRepoRoot(join(env('RGB_DATA_DIR') ?? './.wallets', p.role)),
+    indexerUrl: requiredEnv('RGB_INDEXER_URL'),
+    transportEndpoint: requiredEnv('RGB_TRANSPORT_ENDPOINT'),
+    feeRate: intEnv('FEE_RATE', 2),
+    minConfirmations: intEnv('MIN_CONFIRMATIONS', 1),
+    minFreeUtxos: intEnv('MIN_FREE_UTXOS', 5),
+    maxFeeSat: intEnv('MAX_FEE_SAT', 5000),
+    pollMs: intEnv('WALLET_POLL_MS', 2000),
+  })
 }

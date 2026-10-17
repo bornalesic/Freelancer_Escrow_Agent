@@ -10,12 +10,12 @@
 // interval. The deadline is on the MONOTONIC clock -- see src/clock.ts for why that matters here.
 
 import { closeSync, openSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
-import { dirname, resolve } from 'node:path'
+import { dirname } from 'node:path'
 import { randomBytes } from 'node:crypto'
-import { fileURLToPath } from 'node:url'
 
 import { monotonicMs } from './clock.ts'
 import type { Role, TransferStatus } from './contract-types.ts'
+import { resolveFromRepoRoot } from './paths.ts'
 
 export const LEDGER_VERSION = 2
 
@@ -282,13 +282,8 @@ export async function withLedger<T>(
   }
 }
 
-/** packages/wallet/src -> repo root. */
-const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../../..')
-
 export function resolveLedgerPath(raw: string | undefined): string {
-  // Relative paths resolve against the repo root, NOT the process cwd: `npm run -w <workspace>` starts
-  // each app inside its own folder, so a cwd-relative path gave the agent and the party servers
-  // different ledger files and they never saw each other's payments. apps/agent resolves its own
-  // paths against the repo root the same way.
-  return resolve(REPO_ROOT, raw && raw.trim() !== '' ? raw : '.mock-ledger.json')
+  // Against the repo root, not the cwd: a cwd-relative path gave the agent and the party servers
+  // different ledger files, and they never saw each other's payments (see src/paths.ts).
+  return resolveFromRepoRoot(raw && raw.trim() !== '' ? raw : '.mock-ledger.json')
 }
