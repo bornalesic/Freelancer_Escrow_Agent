@@ -122,9 +122,10 @@ export function postprocess(raw: unknown, req: ParseRequest): PostResult {
     const covered =
       f.kind === 'tests_pass' ? drafts.some((d) => d.kind === 'tests_pass')
       : f.kind === 'file_hash' ? drafts.some((d) => d.kind === 'file_hash' && d.sha256 === f.sha256)
-      : drafts.some((d) =>
+      : f.kind === 'file_present' ? drafts.some((d) =>
           (d.kind === 'file_present' && (stem(d.pathPattern).includes(stem(f.pathPattern)) || stem(f.pathPattern).includes(stem(d.pathPattern))))
-          || (d.kind === 'file_hash' && d.fileName?.toLowerCase() === stem(f.pathPattern)));
+          || (d.kind === 'file_hash' && d.fileName?.toLowerCase() === stem(f.pathPattern)))
+      : true;
     if (!covered) {
       notes.push(`cross-check added ${conditionKey(f)}`);
       drafts.push(f);

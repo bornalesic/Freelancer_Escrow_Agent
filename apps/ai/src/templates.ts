@@ -23,6 +23,7 @@ const TEMPLATES: Record<LogEventType, (f: EventFacts) => string> = {
       : '';
     return `The agreement was turned into ${plural(n, 'automatic check')}; both sides now need to review and accept them.${extra}`;
   },
+  'terms.reparse_requested': () => 'The client asked for the agreement to be read again, so new terms will be proposed.',
   'terms.accepted': (f) => `The ${f.role ?? 'party'} accepted the proposed terms.`,
   'terms.agreed': (f) => `Both sides accepted exactly the same terms, so the deal for ${amt(f)} is now agreed.`,
   'funding.invoice_created': (f) =>
@@ -57,12 +58,18 @@ const TEMPLATES: Record<LogEventType, (f: EventFacts) => string> = {
         return `Not every check passed, so the ${amt(f)} stays locked and the freelancer may submit a fixed version before the deadline.`;
       case 'refund':
         return `The deadline passed without a delivery that meets the conditions, so the agent decided to refund ${amt(f)} to the client.`;
+      case 'await_approval':
+        return `Every automatic check passed, so the ${amt(f)} stays locked while the client reviews the delivery.`;
       case 'wait':
         return `The agent is waiting${f.decision.reason ? `: ${f.decision.reason.replace(/\.$/, '')}` : ''}.`;
       default:
         return `The agent made a decision${f.decision?.reason ? `: ${f.decision.reason.replace(/\.$/, '')}` : ''}.`;
     }
   },
+  'review.report_ready': () => "QVAC's advisory review of the delivery is ready; the client makes the call.",
+  'review.approved': () => 'The client approved the delivery.',
+  'review.disputed': () => 'The client disputed the delivery.',
+  'review.expired': () => 'The client did not answer within the review window, so the delivery counts as accepted.',
   'payout.sent': (f) => `The escrow agent sent ${amt(f)} to the freelancer and is waiting for the transfer to settle.`,
   'payout.settled': (f) => `The freelancer received ${amt(f)}, so this job is complete.`,
   'refund.sent': (f) => `The escrow agent sent ${amt(f)} back to the client and is waiting for the transfer to settle.`,
