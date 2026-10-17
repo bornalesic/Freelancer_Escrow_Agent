@@ -14,6 +14,8 @@ Env: `ROLE`, `PARTY_PORT`, `WALLET_MODE`, `RGB_*` (see `.env.example`), `<ROLE>_
 1. Fastify server with CORS, request logging, zod validation from `@escrow/shared`.
 2. Routes: `GET /health`, `GET /wallet`, `POST /wallet/invoice`, `POST /wallet/pay`,
    `POST /wallet/refresh`, `GET /wallet/transfers`, `POST /wallet/sign`.
+   Client review (branch `New_Rules`) needs no new party routes: an approval leads to the same agent
+   `pay()`. Stretch: the client UI can sign its approval with `/wallet/sign`, like acceptances.
 3. Background loop: while any transfer is `pending`, `refresh()` every 3 s (stop when none pending).
    Receivers must refresh for transfers to progress — this loop is what makes payments "just arrive".
 4. `wallet.init()` on startup; if it fails, keep serving `/health` with `{ ok: false, error }` so the UI

@@ -57,6 +57,27 @@ Buffer, sleep in shifts (never all four asleep), stretch goals only if the demo 
 2. Docker sandbox for the test runner (`--network none`).
 3. Lightning hold-invoice escrow via `@utexo/wdk-rgb-lightning` (only with mentor confirmation).
 
+## Planned change: client review (branch `New_Rules`)
+
+Adds `client_review` conditions for requirements only a person can judge. After the automatic checks
+pass, QVAC writes an advisory review, the client approves or disputes, and no answer within
+`REVIEW_WINDOW_SEC` releases. `decide()` never reads the AI review. Spec: `docs/ESCROW_FLOW.md` and
+`docs/CONTRACTS.md`; detailed tasks are in each folder's `CLAUDE.md`.
+
+**Go / no-go:** this is a contract change after the H4 "now or never" checkpoint. Start only with a team
+yes and only once the fail-then-pass demo runs end to end; anything not working by the H20 freeze is
+cut. Otherwise it stays a roadmap slide for the judges.
+
+| WS  | Changes |
+| --- | ------- |
+| WS3 | Lands the contract first (`/contract-change`): `client_review`, `AWAITING_APPROVAL`, `Approval`, `AiReview`, `await_approval`, `review.*` events, routes. Then `decide()` rules + tests, orchestrator, `/approve` + `clientToken`, sandboxed delivery file routes, excerpts, ticker. |
+| WS2 | parse-v3 emits `client_review`; new `POST /review` (untrusted input, guards, template fallback, mock); templates for the new events; eval cases updated. |
+| WS4 | `client_review` cards, client review screen (files, AI opinion, Approve / Dispute, countdown), freelancer waiting state, projector chip, `landing` fixture, demo script segment. |
+| WS1 | No wallet changes (approval leads to the same `pay()`). Optional: signed approvals via party `/wallet/sign`. Has the most slack, so takes the excerpt builder or the delivery file routes off WS3 if asked. |
+
+Order: (1) WS3 lands the contract, while WS2 can start `/review` against a local type; (2) everyone in
+parallel; (3) mock path first (`AI_MODE=mock` returns a fixed review) so WS4 isn't waiting on QVAC.
+
 ## Git rules
 - `main` must always run. Work on your `ws/*` branch and merge `main` into it at least every 2 hours
   (`git merge origin/main`). Never rebase pushed commits and never force-push (organizer rule).

@@ -5,15 +5,23 @@
 A client and a freelancer agree on a job in plain language. A local AI (QVAC) turns that text into
 **machine-checkable conditions** (tests must pass, a file must match a hash). Both parties approve the
 conditions. The client sends test-USDT (an RGB asset) to the **escrow agent's WDK wallet**. The
-freelancer uploads the deliverable. A **deterministic verifier** checks every condition. If all pass, the
-agent's wallet pays the freelancer; if the deadline passes without a passing delivery, it refunds the
+freelancer uploads the deliverable. A **deterministic verifier** checks every automatic condition. For
+criteria only a person can judge ("looks professional"), the terms carry **`client_review`** conditions:
+QVAC writes an advisory review of the delivery and the client approves or disputes. If everything passes,
+the agent's wallet pays the freelancer; if the deadline passes without a passing delivery, it refunds the
 client. Every step is written to a **live decision log**, and QVAC explains each step in plain language.
 
 ## Trust model (say this honestly in the pitch)
 
-- **The LLM never moves money.** It only (1) proposes conditions that humans must approve and
-  (2) explains decisions after they are made. Release/refund is a pure function of verifier results,
-  escrow state and the deadline (`decide()` in `apps/agent`).
+- **The LLM never moves money.** It only (1) proposes conditions that humans must approve,
+  (2) explains decisions after they are made, and (3) writes an advisory review of `client_review`
+  conditions for the client. Release/refund is a pure function of verifier results, the client's
+  approval, escrow state and the deadline (`decide()` in `apps/agent`). `decide()` never reads the AI review.
+- **The AI review can be manipulated, and that is acceptable.** The freelancer writes the content QVAC
+  reads, so a delivery can try prompt injection. The worst case is a misleading report; the client
+  still has to agree, and the client sees the files themselves.
+- **Only the client can approve.** Routes trust the `role` in the body (LAN demo), except
+  `POST /escrows/:id/approve`, which needs the `clientToken` returned when the client created the escrow.
 - **The escrow agent is a custodian during the escrow.** Funds sit in the agent's own self-custodial
   RGB wallet between funding and release. That is model "A" from our planning. It is transparent
   (every action logged and explained) and local (no cloud), but it is trusted.
@@ -92,7 +100,9 @@ WDK wallet cannot receive faucet USDT or pay KaleidoSwap wallets.
 - Agent: escrows + log in a JSON file (`apps/agent/data/db.json`), written atomically. No database.
 - Wallets: each process owns its own `dataDir`. **Never** point two processes at the same `dataDir`,
   and never load the same mnemonic in two places: RGB state can be lost.
-- Deliverables: uploaded files stored under `apps/agent/data/deliverables/<escrowId>/<n>/`.
+- Deliverables: uploaded files stored under `apps/agent/data/deliverables/<escrowId>/<n>/`. For client
+  review the agent serves them back read-only with `Content-Security-Policy: sandbox`, so a delivered
+  web page can't run scripts against the agent API.
 
 ## Key design rules
 
