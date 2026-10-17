@@ -17,6 +17,11 @@
 | 8 | LAN/Wi-Fi isolation at venue blocks laptop-to-laptop traffic | multi-laptop demo fails | organizers say venue Wi-Fi allows local traffic and Ethernet cables are on site; still bring a travel router or hotspot; fallback: all processes on one laptop, two browser windows | All |
 | 9 | Corrupted wallet state during rehearsals | lost balances | `scripts/setup-demo` recreates everything from zero in < 2 min; never share `dataDir` | WS1 |
 | 10 | Merge conflicts in `packages/shared` | lost hours | WS3 gatekeeps; contract changes via the slash command | WS3 |
+| 11 | Client review: the delivery contains instructions aimed at the AI reviewer (prompt injection) | misleading AI review | review is advice only, `decide()` never reads it; excerpts fenced as untrusted + guards in `/review`; UI says "AI opinion — you make the call"; client sees the files | WS2/WS4 |
+| 12 | Client review: anyone on the LAN calls `/approve` as "client" | money released without the client | `clientToken` required (agent stores its sha256, never broadcast); BIP-322 signature as stretch | WS3 |
+| 13 | Client review: a delivered web page runs scripts when the client opens it | page calls the agent API | files served with `Content-Security-Policy: sandbox`; `<iframe sandbox>` without `allow-same-origin`; `/approve` still needs the token | WS3/WS4 |
+| 14 | Client review: client disputes every delivery until the deadline, gets refunded, keeps the work | unfair to the freelancer | known limit, say it honestly (real platforms use arbitration); "no answer = release" stops silent ghosting | All (pitch) |
+| 15 | Client review: review window too long for the stage | demo stalls | `REVIEW_WINDOW_SEC` ≈ 120 in the demo; the client clicks Approve live | WS4 |
 
 ## Questions for mentors (ask at H0, write the answers here)
 

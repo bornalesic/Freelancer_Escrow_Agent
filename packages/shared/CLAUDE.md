@@ -13,13 +13,13 @@ Create these files, translating the spec 1:1. Every type gets a zod schema; deri
 
 ```
 src/domain.ts      Role, EscrowState, Condition (discriminated union), Acceptance, Delivery,
-                   VerificationResult, Decision, Escrow  (+ schemas)
+                   VerificationResult, Decision, Escrow, Approval, AiReview  (+ schemas)
 src/events.ts      Actor, LogEventType, LogEvent, WsMessage  (+ schemas)
 src/wallet.ts      WalletInfo, AssetBalance, TransferStatus, TransferSummary, EscrowWallet (interface only)
 src/api.ts         request/response schemas for every route in CONTRACTS.md §4, and route constants:
                    export const AGENT_ROUTES = { escrows: '/escrows', escrow: (id) => `/escrows/${id}`, ... }
                    export const AI_ROUTES = ...; export const PARTY_ROUTES = ...
-src/ai.ts          ParseRequest, ParseResult, ExplainRequest (+ schemas)
+src/ai.ts          ParseRequest, ParseResult, ExplainRequest, ReviewRequest (+ schemas)
 src/amount.ts      toBaseUnits("50", 6) -> "50000000"; formatAmount("50000000", 6) -> "50"; bigint-safe
 src/hash.ts        canonicalJson(obj) (sorted keys, no whitespace), termsHash(escrow), sha256Hex(buf)
 src/ids.ts         newEscrowId() -> "esc_" + 4 hex chars; eventId(escrowId, seq) -> "esc_7f3a:0007"
@@ -37,3 +37,13 @@ src/index.ts       re-export everything
 - Renaming/removing/changing a field or a route: only via `.claude/commands/contract-change.md`,
   merged by WS3, announced in chat, and `docs/CONTRACTS.md` updated in the same commit.
 - Keep this package boring: no classes with behaviour, no I/O, no environment variables.
+
+## Client review (branch `New_Rules`, planned)
+One contract change, merged by WS3, adding everything in `docs/CONTRACTS.md` marked for client review:
+the `client_review` condition kind (also in `CONDITION_KINDS`), state `AWAITING_APPROVAL`, `Delivery`
+fields `reviewDueAt` / `review` / `approval`, `Approval`, `AiReview`, the `await_approval` decision,
+the four `review.*` event types, `ReviewRequest`, `ApproveRequest`, the `POST /escrows` response
+`Escrow & { clientToken }`, and route constants for `/approve`, the delivery file routes and AI `/review`.
+`clientToken` must never be a field of `EscrowSchema`: escrows are broadcast to everyone.
+Breaking for anyone with an exhaustive `switch` over `EscrowState`, `Condition['kind']`, `Decision['action']`
+or `LogEventType` (e.g. `apps/ai` `TEMPLATES`): they must handle the new values.

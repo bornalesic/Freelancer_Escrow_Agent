@@ -5,8 +5,9 @@
 A freelancer escrow agent that pays in USDT on Bitcoin. The client and freelancer write their agreement
 in plain language. A local AI (QVAC) turns it into machine-checkable conditions. The client locks USDT
 (an RGB asset) in the agent's self-custodial Tether WDK wallet. The agent verifies the delivery (tests
-pass, file hash matches) and pays the freelancer, or refunds the client. Every decision is explained
-in plain language, and nothing leaves the participants' machines.
+pass, file hash matches), lets the client judge what only a person can judge with an AI review to help,
+and pays the freelancer, or refunds the client. Every decision is explained in plain language, and
+nothing leaves the participants' machines.
 
 ---
 
@@ -35,8 +36,10 @@ slow, custodial and take a cut. Our agent:
 2. **Holds the money on Bitcoin.** The client locks USDT, an RGB asset, in the escrow agent's own
    self-custodial Tether WDK wallet.
 3. **Checks the work.** The freelancer uploads the delivery and a deterministic verifier runs every check.
-4. **Pays or refunds automatically.** All checks pass → the freelancer is paid over RGB. Deadline
-   missed → the client is refunded.
+   Requirements only a person can judge ("the logo looks professional") are agreed as client-review
+   items: QVAC reads the delivery and writes an opinion, and the client approves or disputes.
+4. **Pays or refunds.** All checks pass (and the client approves, or doesn't object in time) → the
+   freelancer is paid over RGB. Deadline missed → the client is refunded.
 5. **Explains every step.** A live decision log shows what happened and why, with a plain-language
    explanation from the local model.
 
@@ -49,8 +52,10 @@ Agreements and deliverables are often confidential client work: source code, des
 QVAC, the agreement, the code and the AI's reasoning never leave the participants' machines.
 
 ### The AI never moves money
-The model only (a) proposes conditions that both humans must approve and (b) explains decisions after
-they are made. Release and refund come from a deterministic verifier and a pure decision function.
+The model only (a) proposes conditions that both humans must approve, (b) explains decisions after
+they are made and (c) gives the client an opinion on subjective requirements. Release and refund come
+from a deterministic verifier, the client's own approval and a pure decision function that never reads
+the AI's opinion.
 
 ---
 
