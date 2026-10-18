@@ -272,9 +272,13 @@ export async function buildApp(opts: AppOptions): Promise<AgentApp> {
       .send(fs.createReadStream(file));
   });
 
-  app.post<IdParams>(AGENT_ROUTES.retryStep(':id'), async (req) =>
-    orchestrator.retryStep(req.params.id, parse(RetryStepRequestSchema, req.body).force),
-  );
+  app.post<IdParams>(AGENT_ROUTES.retryStep(':id'), async (req) => {
+    const { force } = parse(RetryStepRequestSchema, req.body);
+    // `force` re-sends a payout or refund whose outcome is unknown: an operator decision, made on the agent's
+    // own laptop after checking its wallet. From the LAN it would let anyone ask for a second payout.
+    if (force && !fromAgentLaptop(req)) throw new HttpError(403, 'Forcing a payment again is only possible on the escrow service laptop');
+    return orchestrator.retryStep(req.params.id, force);
+  });
 
   /**
    * Stream a multipart upload (one `file`, max 20 MB) to data/tmp, then run `use` with it and the text fields.
@@ -343,8 +347,11 @@ export async function buildApp(opts: AppOptions): Promise<AgentApp> {
 
   app.post(AGENT_ROUTES.devMine, async (req) => dev.mine(parse(DevMineRequestSchema, req.body).blocks ?? 1));
 
-  app.post(AGENT_ROUTES.devReset, async () => {
+  app.post(AGENT_ROUTES.devReset, async (req) => {
     if (config.nodeEnv === 'production') throw new HttpError(403, '/dev/reset is disabled in production');
+    // Deletes every escrow record, including ones whose money the agent wallet still holds: the service
+    // screen on the agent's own laptop only, never anyone on the (venue) network.
+    if (!fromAgentLaptop(req)) throw new HttpError(403, '/dev/reset only works on the escrow service laptop');
     store.reset();
     log.warn('dev reset: all escrows deleted');
     return { ok: true };

@@ -519,14 +519,34 @@ export class Orchestrator {
     return next;
   }
 
+  /**
+   * Ask the wallet itself whether a payment to this escrow's funding invoice exists yet (pending or settled).
+   * `fundingSeen` alone lags by up to one wallet poll, and the client's auto-pay sends the moment a job is
+   * taken: a cancel in that gap would leave the money arriving at a CANCELLED escrow, which never refunds.
+   * If the wallet can't be checked, assume the payment may be on its way.
+   */
+  private async fundingInFlight(e: Escrow): Promise<boolean> {
+    const rid = this.d.store.internal(e.id).fundingRecipientId;
+    if (!rid) return false;
+    if (!this.d.wallets.ready) return true;
+    try {
+      await this.wallet.refresh();
+      const list = await this.wallet.transfers(e.assetId);
+      return list.some((t) => t.direction === 'incoming' && t.recipientId === rid && t.status !== 'failed');
+    } catch (err) {
+      log.warn(`${e.id}: could not check the wallet before cancelling (${errorMessage(err)})`);
+      return true;
+    }
+  }
+
   cancel(id: string, role: PartyRole, token?: string): Promise<Escrow> {
-    return this.lock(id, () => {
+    return this.lock(id, async () => {
       const e = this.mustGet(id);
       if (e.state === 'CANCELLED') return e;
       if (!CANCELLABLE.includes(e.state)) throw conflict(`Too late to cancel: the escrow is ${e.state}`);
       if (e.state === 'OPEN' && role === 'freelancer') throw conflict('Only the client can withdraw an open listing');
       this.requireToken(id, role, token);
-      if (e.state === 'AWAITING_FUNDS' && this.d.store.internal(id).fundingSeen) {
+      if (e.state === 'AWAITING_FUNDS' && (this.d.store.internal(id).fundingSeen || (await this.fundingInFlight(e)))) {
         throw conflict("The client's payment is already on its way, so the escrow can't be cancelled now");
       }
       const next = this.d.machine.transition(e, 'CANCELLED', {
@@ -839,17 +859,9 @@ export class Orchestrator {
         if (!e.fundingDueAt) throw new StepError('The funding transfer failed', 'wallet', `rawStatus ${t.rawStatus}`);
         this.d.store.patchInternal(id, { fundingFailed: true }); // marketplace: decide() reopens the listing
       }
-      // Marketplace timeouts (not funded in the window / before the deadline, or the payment failed).
-      const exit = this.decideNow(e);
-      if (exit.action === 'reopen' || exit.action === 'cancel') {
-        await this.lock(id, () => {
-          const cur = this.d.store.get(id);
-          if (!cur || cur.state !== 'AWAITING_FUNDS') return;
-          const decision = this.decideNow(cur);
-          if (decision.action === 'reopen' || decision.action === 'cancel') this.applyDecision(cur, decision);
-        });
-        return;
-      }
+      // Record a payment on its way BEFORE any timeout decision: once seen, decide() waits for it. Deciding
+      // first would reopen (or cancel) a job whose money is already arriving when the payment is first seen
+      // after fundingDueAt, and the next taker's funding invoice would make the client pay a second time.
       if (t && t.status !== 'failed' && !this.d.store.internal(id).fundingSeen) {
         await this.lock(id, () => {
           const cur = this.d.store.get(id);
@@ -862,6 +874,17 @@ export class Orchestrator {
             data: { txid: t.txid, rawStatus: t.rawStatus },
           });
         });
+      }
+      // Marketplace timeouts (not funded in the window / before the deadline, or the payment failed).
+      const exit = this.decideNow(e);
+      if (exit.action === 'reopen' || exit.action === 'cancel') {
+        await this.lock(id, () => {
+          const cur = this.d.store.get(id);
+          if (!cur || cur.state !== 'AWAITING_FUNDS') return;
+          const decision = this.decideNow(cur);
+          if (decision.action === 'reopen' || decision.action === 'cancel') this.applyDecision(cur, decision);
+        });
+        return;
       }
       if (t?.status === 'settled') {
         if (BigInt(t.amount) < BigInt(escrowTotal(e))) {

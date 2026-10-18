@@ -7,7 +7,8 @@ import { agentApi } from '../lib/api';
 import { HttpError, errorMessage } from '../lib/http';
 import { Button } from './ui';
 
-const IMAGE = /\.(png|jpe?g|gif|webp|svg)$/i;
+// No SVG: an SVG can carry scripts, and previews are blob URLs on this app's origin (lib/http.ts).
+const IMAGE = /\.(png|jpe?g|gif|webp)$/i;
 const MAX_PREVIEWS = 8;
 const MAX_PREVIEW_BYTES = 5 * 1024 * 1024;
 
