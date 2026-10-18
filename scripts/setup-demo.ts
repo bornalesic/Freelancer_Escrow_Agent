@@ -13,7 +13,7 @@
 // rgb-lib picks immature coinbase outputs and the broadcast fails (packages/wallet/CLAUDE.md).
 // Never prints a mnemonic. Option: --env-file <path> (default .env.local).
 
-import type { InvoiceResponse, PartyHealthResponse, Role, TransferSummary } from '@escrow/shared'
+import type { InvoiceResponse, PartyHealthResponse, Role } from '@escrow/shared'
 
 import {
   Bitcoind,
@@ -174,9 +174,6 @@ export async function setupDemo(argv: string[]): Promise<void> {
     const txid = await treasury.pay({ invoice: invoice.invoice, assetId, amount })
     say(`sent, tx ${txid.slice(0, 16)}...`)
 
-    const clientRows = (): Promise<TransferSummary[]> => client !== undefined
-      ? client.transfers(assetId)
-      : getJson<TransferSummary[]>(`${clientUrl ?? ''}/wallet/transfers?assetId=${encodeURIComponent(assetId)}`)
     for (let round = 1; ; round += 1) {
       // The recipient's refresh pulls the payment off the proxy; a remote client's party server does that itself.
       if (client !== undefined) await client.refresh()
@@ -184,13 +181,21 @@ export async function setupDemo(argv: string[]): Promise<void> {
       await btc.mine(1)
       if (client !== undefined) await client.refresh()
       treasury.refresh()
-      const received = (await clientRows()).find((t) => t.recipientId === invoice.recipientId)
-      if (treasury.paymentStatus(assetId, txid) === 'Settled' && received?.status === 'settled') {
-        say(`settled after ${round} block(s): the client received ${received.amount} base units`)
+      const sent = treasury.paymentStatus(assetId, txid)
+      // A remote client's /wallet/transfers answers only its own laptop (apps/party), so there the treasury's
+      // side decides: Settled means the client accepted the consignment and the witness tx is confirmed.
+      const received = client !== undefined
+        ? (await client.transfers(assetId)).find((t) => t.recipientId === invoice.recipientId)
+        : undefined
+      if (sent === 'Settled' && (client === undefined || received?.status === 'settled')) {
+        say(client !== undefined
+          ? `settled after ${round} block(s): the client received ${received?.amount} base units`
+          : `settled after ${round} block(s); on the client laptop, GET localhost:4101/wallet shows the 100`)
         break
       }
       if (round === SETTLE_ROUNDS) {
-        throw new Error(`the 100 ${ticker} did not settle after ${SETTLE_ROUNDS} blocks (client side: ${received?.rawStatus ?? 'not seen yet'})`)
+        throw new Error(`the 100 ${ticker} did not settle after ${SETTLE_ROUNDS} blocks (treasury side: ${sent ?? 'not seen yet'}` +
+          (client !== undefined ? `, client side: ${received?.rawStatus ?? 'not seen yet'})` : ')'))
       }
       if (client === undefined) await sleep(3_000) // give the party server's refresh loop a turn
     }

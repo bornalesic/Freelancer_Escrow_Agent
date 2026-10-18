@@ -1,15 +1,22 @@
 import type { Config } from './config';
 import { log } from './log';
 import { HttpError, errorMessage } from './util';
-import type { WalletHolder } from './wallet';
 
-/** Regtest helpers: mine blocks via bitcoind JSON-RPC to the agent wallet's address. */
+/** bitcoind's own wallet in the regtest stack, the one `npm run demo:setup` funds everyone from. */
+const MINER = 'miner';
+
+/**
+ * Regtest helpers: mine blocks via bitcoind JSON-RPC to bitcoind's `miner` wallet. Never to an RGB wallet:
+ * a coinbase needs 100 confirmations, but rgb-lib picks it anyway when it next creates UTXOs, bitcoind
+ * rejects that ("premature spend of coinbase") and the agent wallet cannot start. Same rule as
+ * scripts/demo-lib.ts.
+ */
 export class Dev {
   private fakeHeight = 0;
   private lastAutoMine = 0;
-  private address?: string;
+  private minerAddress?: string;
 
-  constructor(private config: Config, private wallets: WalletHolder) {}
+  constructor(private config: Config) {}
 
   /** Auto-mine only makes sense with real wallets on regtest. */
   get autoMineEnabled(): boolean {
@@ -22,9 +29,18 @@ export class Dev {
       return { height: this.fakeHeight };
     }
     if (this.config.network !== 'regtest') throw new HttpError(400, 'Mining is only possible on regtest');
-    this.address ??= (await this.wallets.wallet.info()).address;
-    await this.rpc('generatetoaddress', [blocks, this.address]);
+    this.minerAddress ??= await this.newMinerAddress();
+    await this.rpc('generatetoaddress', [blocks, this.minerAddress]);
     return { height: (await this.rpc('getblockcount', [])) as number };
+  }
+
+  /** The `miner` wallet survives a container restart but is not loaded again: load it, or create it once. */
+  private async newMinerAddress(): Promise<string> {
+    if (!((await this.rpc('listwallets', [])) as string[]).includes(MINER)) {
+      const onDisk = ((await this.rpc('listwalletdir', [])) as { wallets: { name: string }[] }).wallets.map((w) => w.name);
+      await this.rpc(onDisk.includes(MINER) ? 'loadwallet' : 'createwallet', [MINER]);
+    }
+    return (await this.rpc('getnewaddress', [], MINER)) as string;
   }
 
   /** Mine one block while a transfer is pending, at most every 3 s. Never throws. */
@@ -39,10 +55,10 @@ export class Dev {
     }
   }
 
-  private async rpc(method: string, params: unknown[]): Promise<unknown> {
+  private async rpc(method: string, params: unknown[], wallet?: string): Promise<unknown> {
     const { url, user, pass } = this.config.bitcoind;
     if (!url) throw new HttpError(500, 'BITCOIND_RPC_URL is not set');
-    const res = await fetch(url, {
+    const res = await fetch(wallet ? `${url.replace(/\/$/, '')}/wallet/${wallet}` : url, {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
