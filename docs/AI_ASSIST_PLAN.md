@@ -91,6 +91,7 @@ laptop and the AI laptop must run the same `main`**, or the agent rejects the pa
 - [x] Templates/facts handle the `examples` kind (summary sentence, failing example names).
 
 ## WS3 — Agent — tasks (details in `apps/agent/CLAUDE.md` → "AI assist features")
+Done: 1–3 (on `ws/agent`). Not started: 4.
 1. **A · Generic proxy** `POST /assist/:name` (~30 min). Covers features 3–7.
 2. **A · `examples` kind**: flip the union, verifier case (~40 lines with the shared renderer), tests on
    slugify v1/v2.

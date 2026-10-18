@@ -5,10 +5,11 @@ import { pipeline } from 'node:stream/promises';
 import cors from '@fastify/cors';
 import multipart from '@fastify/multipart';
 import websocket from '@fastify/websocket';
-import Fastify, { type FastifyInstance } from 'fastify';
+import Fastify, { type FastifyInstance, type FastifyRequest } from 'fastify';
 import { ZodError, type ZodType } from 'zod';
 import {
   AGENT_ROUTES,
+  ASSIST_SCHEMAS,
   AcceptRequestSchema,
   ApproveRequestSchema,
   CancelRequestSchema,
@@ -16,6 +17,7 @@ import {
   DeliveryFieldsSchema,
   DevMineRequestSchema,
   FundedRequestSchema,
+  PROXIED_ASSISTS,
   RefundInvoiceRequestSchema,
   ReparseRequestSchema,
   RetryStepRequestSchema,
@@ -23,13 +25,16 @@ import {
   type ConfigResponse,
   type CreateEscrowResponse,
   type DeliveryFilesResponse,
+  type DryRunResponse,
   type EscrowDetailResponse,
   type EscrowWallet,
+  type ProxiedAssistName,
   type WalletResponse,
 } from '@escrow/shared';
 import { AiClient, Explainer } from './ai-client';
 import type { Config } from './config';
 import { Dev } from './dev';
+import { DryRuns } from './dry-run';
 import { Hub } from './hub';
 import { log } from './log';
 import { Machine } from './machine';
@@ -93,6 +98,7 @@ export async function buildApp(opts: AppOptions): Promise<AgentApp> {
   await wallets.create(opts.wallet);
   const dev = new Dev(config, wallets);
   const orchestrator = new Orchestrator({ config, store, machine, wallets, ai, dev });
+  const dryRuns = new DryRuns({ config, store, ai });
 
   const app = Fastify({ logger: false, bodyLimit: 1024 * 1024 });
   await app.register(cors, { origin: true });
@@ -215,9 +221,12 @@ export async function buildApp(opts: AppOptions): Promise<AgentApp> {
     orchestrator.retryStep(req.params.id, parse(RetryStepRequestSchema, req.body).force),
   );
 
-  app.post<IdParams>(AGENT_ROUTES.deliveries(':id'), async (req) => {
-    if (!store.has(req.params.id)) throw notFound('Escrow');
-    if (!req.isMultipart()) throw new HttpError(400, 'Send multipart/form-data with a "file" and a "payoutInvoice"');
+  /**
+   * Stream a multipart upload (one `file`, max 20 MB) to data/tmp, then run `use` with it and the text fields.
+   * The temp file is always deleted afterwards (addDelivery moves it away first).
+   */
+  async function withUpload<T>(req: FastifyRequest, usage: string, use: (upload: Upload, fields: Record<string, string>) => Promise<T>): Promise<T> {
+    if (!req.isMultipart()) throw new HttpError(400, `Send multipart/form-data with ${usage}`);
     const tmpDir = path.join(config.dataDir, 'tmp');
     fs.mkdirSync(tmpDir, { recursive: true });
     const fields: Record<string, string> = {};
@@ -239,12 +248,38 @@ export async function buildApp(opts: AppOptions): Promise<AgentApp> {
           fields[part.fieldname] = String(part.value);
         }
       }
-      const { payoutInvoice } = parse(DeliveryFieldsSchema, fields);
       if (!upload) throw new HttpError(400, 'A "file" is required');
       if (upload.sizeBytes === 0) throw new HttpError(400, 'The file is empty');
-      return await orchestrator.addDelivery(req.params.id, upload, payoutInvoice);
+      return await use(upload, fields);
     } finally {
       for (const f of tmpFiles) fs.rmSync(f, { force: true });
+    }
+  }
+
+  app.post<IdParams>(AGENT_ROUTES.deliveries(':id'), async (req) => {
+    if (!store.has(req.params.id)) throw notFound('Escrow');
+    return withUpload(req, 'a "file" and a "payoutInvoice"', (upload, fields) =>
+      orchestrator.addDelivery(req.params.id, upload, parse(DeliveryFieldsSchema, fields).payoutInvoice),
+    );
+  });
+
+  app.post<IdParams>(AGENT_ROUTES.dryRun(':id'), async (req): Promise<DryRunResponse> => {
+    if (!store.has(req.params.id)) throw notFound('Escrow');
+    return withUpload(req, 'a "file"', (upload) => dryRuns.run(req.params.id, upload));
+  });
+
+  // ---- AI assist -----------------------------------------------------------------------------
+
+  /** Pass-through to apps/ai `/assist/:name` for the UI. Advisory: no state change, no LogEvent. */
+  app.post<{ Params: { name: string } }>(AGENT_ROUTES.assist(':name'), async (req) => {
+    const name = req.params.name as ProxiedAssistName;
+    if (!PROXIED_ASSISTS.includes(name)) throw new HttpError(404, `Unknown assist: ${req.params.name}`);
+    const body = parse<unknown>(ASSIST_SCHEMAS[name].request, req.body);
+    try {
+      return await ai.assist(name, body);
+    } catch (err) {
+      log.warn(`assist ${name} failed: ${errorMessage(err)}`);
+      throw new HttpError(503, 'The AI assistant is not available right now');
     }
   });
 

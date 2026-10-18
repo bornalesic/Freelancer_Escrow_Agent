@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { Condition, VerificationResult } from '@escrow/shared';
 import { errorMessage } from '../util';
+import { runExamples } from './examples';
 import { hashFile } from './hash';
 import { findMatches } from './present';
 import { runCommand } from './tests';
@@ -65,6 +66,8 @@ export async function checkCondition(c: Condition, ws: Workspace): Promise<Verif
         const matched = await findMatches(root, c.pathPattern);
         return { conditionId: c.id, passed: matched.length > 0, evidence: { matched, durationMs: Date.now() - start } };
       }
+      case 'examples':
+        return await runExamples(c, root);
       case 'client_review':
         // Never called by the orchestrator (it only checks automatic conditions); here for exhaustiveness.
         return fail('This condition is judged by the client, not the verifier');

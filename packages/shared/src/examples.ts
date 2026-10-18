@@ -5,7 +5,7 @@ import { z } from 'zod';
 // The model only writes data; the test file is rendered by code (renderExamplesTest), so the same file
 // runs in the verifier and can be downloaded by the freelancer for a local dry run.
 //
-// Standalone on purpose: WS3 adds ExamplesConditionSchema to ConditionSchema when the verifier runs it.
+// Part of ConditionSchema (domain.ts); the agent's verifier runs it (apps/agent/src/verifier/examples.ts).
 
 const JS_IDENTIFIER = /^[A-Za-z_$][\w$]*$/;
 

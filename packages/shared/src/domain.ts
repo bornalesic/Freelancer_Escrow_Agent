@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { ExamplesConditionSchema } from './examples.ts';
 
 /** Integer base units carried as a decimal string (bigint-safe). */
 export const AmountSchema = z.string().regex(/^\d+$/, 'must be an integer amount in base units');
@@ -52,18 +53,20 @@ export const ClientReviewConditionSchema = z.object({
 });
 
 /**
- * An acceptance condition. Discriminated on `kind`. The verifier checks `tests_pass`, `file_hash` and
- * `file_present` automatically; `client_review` is judged by the client, after QVAC writes an advisory report.
+ * An acceptance condition. Discriminated on `kind`. The verifier checks `tests_pass`, `file_hash`,
+ * `file_present` and `examples` (agreed inputs → expected outputs, see examples.ts) automatically;
+ * `client_review` is judged by the client, after QVAC writes an advisory report.
  */
 export const ConditionSchema = z.discriminatedUnion('kind', [
   TestsPassConditionSchema,
   FileHashConditionSchema,
   FilePresentConditionSchema,
   ClientReviewConditionSchema,
+  ExamplesConditionSchema,
 ]);
 export type Condition = z.infer<typeof ConditionSchema>;
 export type ConditionKind = Condition['kind'];
-export const CONDITION_KINDS = ['tests_pass', 'file_hash', 'file_present', 'client_review'] as const satisfies readonly ConditionKind[];
+export const CONDITION_KINDS = ['tests_pass', 'file_hash', 'file_present', 'client_review', 'examples'] as const satisfies readonly ConditionKind[];
 
 export type AutomaticCondition = Exclude<Condition, { kind: 'client_review' }>;
 export type ClientReviewCondition = Extract<Condition, { kind: 'client_review' }>;
