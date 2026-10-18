@@ -34,7 +34,7 @@ export function HowItWorks() {
             </Step>
             <Step n={2} title="A freelancer takes it">
               The first one wins. The client's wallet then pays the reward plus a {SERVICE_FEE_PERCENT}% fee into escrow on its own,
-              within a few minutes, or the job goes back to the marketplace. A freelancer can also offer a lower price; if the
+              within a few minutes, or the job goes back to the marketplace. A freelancer can also offer a different price, lower or higher; if the
               client accepts it, the job is agreed at that price (with the fee worked out again) and the other offers are
               declined. Unanswered offers expire.
             </Step>

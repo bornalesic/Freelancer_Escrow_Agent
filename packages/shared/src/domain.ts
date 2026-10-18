@@ -146,7 +146,7 @@ export const OfferStatusSchema = z.enum(['pending', 'accepted', 'declined', 'exp
 export type OfferStatus = z.infer<typeof OfferStatusSchema>;
 
 /**
- * A freelancer's counteroffer on an OPEN listing: the same job for a lower reward. Making it counts as
+ * A freelancer's counteroffer on an OPEN listing: the same job for another reward (lower or higher). Making it counts as
  * that freelancer accepting `termsHash` = the listing's terms with `amount` and its recalculated `fee`;
  * the client accepting it agrees to the same hash. Pending offers expire at `expiresAt` (never after the
  * job's deadline) and are declined when the listing is taken, edited or closed.

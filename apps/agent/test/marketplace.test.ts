@@ -1,6 +1,6 @@
 // The marketplace flow on the engine: publish → OPEN → take → funding → deliver (fail, then pass) → release
 // with the 2% fee kept; the timeouts that move no money (funding window, failed funding, listing deadline);
-// the verifiability gate; tokens; image-only previews; counteroffers. Stub wallet and an unreachable AI
+// review-only jobs; tokens; image-only previews; counteroffers. Stub wallet and an unreachable AI
 // (fallback parser, template explanations), so it runs anywhere.
 
 import type { AddressInfo } from 'node:net';
@@ -224,7 +224,7 @@ describe('marketplace flow', () => {
     expect(closed.events.at(-1)).toMatchObject({ type: 'decision.made', data: { action: 'cancel' } });
   });
 
-  it('verifiability gate: a job nothing can check automatically cannot be published', async () => {
+  it('a job nothing can check automatically can still be published (the client reviews every delivery)', async () => {
     const t = await start();
     const created = await t.call('POST', '/escrows', {
       title: 'Logo', rawText: 'Design a logo. It should look clean and modern.', amount: REWARD, deadline: deadlineIn(30 * 60_000),
@@ -232,8 +232,8 @@ describe('marketplace flow', () => {
     const { escrow } = await t.waitFor(created.body.id, 'PROPOSED');
     expect(escrow.conditions.every((c) => c.kind === 'client_review')).toBe(true);
     const res = await t.call('POST', `/escrows/${escrow.id}/publish`, { termsHash: escrow.termsHash, clientToken: created.body.clientToken });
-    expect(res.status).toBe(409);
-    expect(res.body.error).toMatch(/checked automatically/);
+    expect(res.status).toBe(200);
+    expect(res.body.state).toBe('OPEN');
   });
 
   it('editing an OPEN listing unlists it and voids the old terms', async () => {
@@ -284,13 +284,24 @@ describe('counteroffers', () => {
   const OFFER = '40000000';   // 40 tUSDT instead of 50
   const OFFER_FEE = '800000'; // 2% of 40
 
-  it('a freelancer offers less; the client accepts → agreed at the new reward and fee, others declined, the offer token works', async () => {
+  it('a bid above the listed reward can be accepted: funding asks for that reward + its fee', async () => {
+    const t = await start();
+    const job = await t.listed();
+    const bid = await t.call('POST', `/escrows/${job.id}/offers`, { termsHash: job.termsHash, amount: '60000000' });
+    expect(bid.status).toBe(200);
+    const made = bid.body.escrow.offers[0];
+    expect(made).toMatchObject({ amount: '60000000', fee: '1200000' });
+    const accepted = await t.call('POST', `/escrows/${job.id}/offers/${made.id}/accept`, { termsHash: made.termsHash, clientToken: job.clientToken });
+    expect(accepted.body).toMatchObject({ state: 'AGREED', amount: '60000000', fee: '1200000' });
+    expect((await t.waitFor(job.id, 'AWAITING_FUNDS')).escrow.fundingInvoice).toMatch(/:61200000$/);
+  });
+
+  it('freelancers offer any price; the client accepts → agreed at the new reward and fee, others declined, the offer token works', async () => {
     const t = await start();
     const job = await t.listed();
     const offer = (body: object) => t.call('POST', `/escrows/${job.id}/offers`, body);
 
     expect((await offer({ termsHash: 'b'.repeat(64), amount: OFFER })).status).toBe(409); // not the version on the listing
-    expect((await offer({ termsHash: job.termsHash, amount: REWARD })).status).toBe(400);   // must be lower
     expect((await offer({ termsHash: job.termsHash, amount: '0' })).status).toBe(400);
     const o1 = await offer({ termsHash: job.termsHash, amount: OFFER, note: 'I can do it today' });
     expect(o1.status).toBe(200);
@@ -299,7 +310,8 @@ describe('counteroffers', () => {
     expect(made).toMatchObject({ id: 'o1', amount: OFFER, fee: OFFER_FEE, note: 'I can do it today', status: 'pending' });
     expect(made.termsHash).not.toBe(job.termsHash); // same job, another reward: other terms
     expect(JSON.stringify(o1.body.escrow)).not.toContain(o1.body.offerToken);
-    const o2 = await offer({ termsHash: job.termsHash, amount: '45000000' });
+    const o2 = await offer({ termsHash: job.termsHash, amount: '60000000' }); // above the listed 50: allowed
+    expect(o2.status).toBe(200);
     expect(o2.body.offerId).toBe('o2');
 
     // Only the client accepts, and only the exact terms it was shown.

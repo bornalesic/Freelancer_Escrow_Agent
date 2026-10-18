@@ -313,8 +313,8 @@ export class Orchestrator {
 
   /**
    * The client approves the proposed requirements: that counts as the client accepting this exact
-   * termsHash, and the job goes OPEN on the marketplace. Verifiability gate: a job nothing can check
-   * automatically is never held in autonomous escrow.
+   * termsHash, and the job goes OPEN on the marketplace. A job with no automatic checks can be published
+   * too: every delivery then waits for the client's review (decide() → await_approval).
    */
   publish(id: string, body: { termsHash: string; clientToken: string }): Promise<Escrow> {
     return this.lock(id, () => {
@@ -326,13 +326,6 @@ export class Orchestrator {
       if (e.state !== 'PROPOSED') throw conflict(`Only proposed requirements can be published (state is ${e.state})`);
       if (!e.termsHash || body.termsHash !== e.termsHash) {
         throw conflict('These requirements are out of date. Review the current version.', { currentTermsHash: e.termsHash });
-      }
-      if (!e.conditions.some(isAutomaticCondition)) {
-        throw conflict(
-          'None of these requirements can be checked automatically, so the job cannot be held in escrow. ' +
-          'Rewrite the description with something a machine can check: tests that must pass, files that must be included, ' +
-          'or examples of input and expected output.',
-        );
       }
       if (safeNow().getTime() >= Date.parse(e.deadline)) throw conflict('The deadline has already passed');
       this.d.store.patchInternal(id, { marketplace: true });
@@ -386,7 +379,7 @@ export class Orchestrator {
   }
 
   /**
-   * A freelancer offers to do an OPEN listing for less. Making the offer is that freelancer accepting the
+   * A freelancer offers to do an OPEN listing for another reward (any amount above zero). Making the offer is that freelancer accepting the
    * listing's terms at this amount (offerTerms); nothing changes for anyone else until the client accepts.
    */
   makeOffer(id: string, body: MakeOfferRequest): Promise<{ escrow: Escrow; offerId: string; offerToken: string }> {
@@ -399,9 +392,6 @@ export class Orchestrator {
       const now = safeNow();
       if (now.getTime() >= Date.parse(e.deadline)) throw conflict('The deadline has passed');
       const amount = BigInt(body.amount).toString();
-      if (BigInt(amount) >= BigInt(e.amount)) {
-        throw new HttpError(400, `An offer must be lower than the listed reward of ${this.money(e)}. To work for that, take the job.`);
-      }
       const offers = e.offers ?? [];
       if (offers.filter((o) => o.status === 'pending').length >= MAX_PENDING_OFFERS) {
         throw conflict('This listing has too many open offers. Try again later.');
