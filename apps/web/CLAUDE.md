@@ -121,6 +121,9 @@ for agent / party / AI (from `/health`), and a clear error banner instead of bla
   sessionStorage. `/agent` shows both parties' balances from `CLIENT_PARTY_URL` / `FREELANCER_PARTY_URL`
   (exposed via `envPrefix`) or `?client=` / `?freelancer=`.
 - VITE_* vars are read from the **repo-root** `.env` / `.env.local` (`envDir: '../..'`).
+- Opened from another laptop (`http://<ip>:5173/agent`), env addresses that say `localhost` point at the
+  page's own host (`lib/pageHost.ts`), so plain links work across the LAN. Query params are used as typed:
+  `?party=http://localhost:4101` still means the viewer's own party server.
 - `@escrow/shared` is a normal workspace dependency (TS sources, hence `allowImportingTsExtensions`). Paths
   come from `AGENT_ROUTES` / `PARTY_ROUTES`. Before Accept, the UI recomputes `termsHash` from the terms on
   screen (`lib/terms.ts`) and refuses to accept on a mismatch.
