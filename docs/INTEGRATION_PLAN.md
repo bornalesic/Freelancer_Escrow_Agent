@@ -95,7 +95,7 @@ Until the scripts exist, the cross-laptop wiring (Phase 0) and the mock path can
 | -------- | ------------ | ------------- | ----------------- |
 | `WALLET_MODE` | `real` | `real` | `real` |
 | `<ROLE>_MNEMONIC` | `AGENT_` (+ `TREASURY_` for setup) | `CLIENT_` | `FREELANCER_` |
-| `RGB_INDEXER_URL` | `tcp://localhost:50001` | `tcp://<agent-ip>:50001` | `tcp://<agent-ip>:50001` |
+| `RGB_INDEXER_URL` | `tcp://<agent-ip>:50001` | `tcp://<agent-ip>:50001` | `tcp://<agent-ip>:50001` |
 | `RGB_TRANSPORT_ENDPOINT` | `rpc://<agent-ip>:3000/json-rpc` ⚠ | `rpc://<agent-ip>:3000/json-rpc` | `rpc://<agent-ip>:3000/json-rpc` |
 | `ESCROW_ASSET_ID` | from `demo:setup` | same | same |
 | `AI_URL` | `http://<ai-ip>:4300` | — | — |
@@ -153,7 +153,9 @@ green, projector footer shows the model, client 100 / freelancer 0 / held 0.
 **WS3 — Escrow core**
 - [ ] Agent laptop: `.env.local` per the table, one agent process, `/health` all green in real mode.
 - [ ] Check `AUTO_MINE` + `/dev/mine` against the regtest bitcoind, and the refund path (Run C).
-- [ ] Confirm `REVIEW_WINDOW_SEC` is timed monotonically (WS1's clock-jump note), not by `Date.now()`.
+- [x] Confirm `REVIEW_WINDOW_SEC` is timed monotonically (WS1's clock-jump note), not by `Date.now()`.
+      *Checked 2026-10-18: every `decide()` call gets `safeNow()` (`apps/agent/src/util.ts`), the earlier
+      of the wall clock and a steady clock, so a forward jump cannot release or refund early.*
 
 **WS4 — UI + demo**
 - [ ] Web on all three wallet laptops with the right agent/party URLs; projector on the agent laptop.
