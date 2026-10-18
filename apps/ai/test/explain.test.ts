@@ -44,6 +44,13 @@ describe('facts + templates', () => {
     expect(text).toBe('The check "All the included tests must pass" failed: the test "strips punctuation: "Hello, World!" → "hello-world"" did not pass.');
   });
 
+  it('quotes expected vs actual when the spec reporter shows them (the demo line)', () => {
+    const tail = `✖ strips punctuation: "Hello, World!" → "hello-world" (0.8ms)\n  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:\n    actual: 'hello,-world!',\n    expected: 'hello-world',`;
+    const facts = buildFacts(event('verify.condition_result', { ...failResult, evidence: { exitCode: 1, stdoutTail: tail, durationMs: 9 } }), escrow());
+    expect(facts.result).toMatchObject({ expected: 'hello-world', actual: 'hello,-world!' });
+    expect(templateFor(facts)).toMatch(/did not pass \(it expected "hello-world" but got "hello,-world!"\)\.$/);
+  });
+
   it('formats amounts with precision and ticker', () => {
     const text = templateFor(buildFacts(event('funding.settled'), escrow()));
     expect(text).toContain('50 tUSDT');

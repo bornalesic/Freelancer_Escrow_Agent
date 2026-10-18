@@ -1,11 +1,12 @@
 import cors from '@fastify/cors';
 import {
-  AI_ROUTES, ExplainRequestSchema, ParseRequestSchema, ReviewRequestSchema,
+  AI_ROUTES, ASSIST_NAMES, ASSIST_SCHEMAS, ExplainRequestSchema, ParseRequestSchema, ReviewRequestSchema,
   type AiHealth, type AiReview, type ExplainRequest, type ExplainStreamChunk, type ExplainSyncResult,
   type ParseRequest, type ParseResult, type ReviewRequest,
 } from '@escrow/shared';
 import Fastify, { type FastifyInstance, type FastifyReply } from 'fastify';
 import type { z } from 'zod';
+import type { AssistHandlers } from './assistHandlers.ts';
 
 export interface AiHandlers {
   health(): AiHealth & Record<string, unknown>;
@@ -14,6 +15,8 @@ export interface AiHandlers {
   explain(req: ExplainRequest, onDelta?: (text: string) => void, signal?: AbortSignal): Promise<ExplainSyncResult>;
   /** Advisory opinion on each client_review condition. Must not throw. */
   review(req: ReviewRequest): Promise<AiReview>;
+  /** POST /assist/<name>: advisory helpers, each with a deterministic fallback. Must not throw. */
+  assist: AssistHandlers;
 }
 
 function badRequest(reply: FastifyReply, error: z.ZodError) {
@@ -59,6 +62,14 @@ export async function buildServer(h: AiHandlers, log: (msg: string) => void = ()
     }
     return h.review(body.data);
   });
+
+  for (const name of ASSIST_NAMES) {
+    app.post(AI_ROUTES.assist(name), async (request, reply) => {
+      const body = ASSIST_SCHEMAS[name].request.safeParse(request.body);
+      if (!body.success) return badRequest(reply, body.error);
+      return (h.assist[name] as (req: unknown) => Promise<unknown>)(body.data);
+    });
+  }
 
   app.post(AI_ROUTES.explainSync, async (request, reply) => {
     const body = ExplainRequestSchema.safeParse(request.body);

@@ -1,4 +1,5 @@
-import { ConditionSchema, type Condition, type ParseRequest } from '@escrow/shared';
+import { ConditionSchema, ExamplesConditionSchema, type Condition, type ParseRequest } from '@escrow/shared';
+import { coveredByExamples, type ExamplesDraft } from './examples.ts';
 import {
   DEFAULT_TEST_COMMAND, DEFAULT_TIMEOUT_SEC, HASH_WORDS, MISSING_HASH_NOTE, MONEY_OR_TIME, NO_CONDITIONS_NOTE, TESTS_PASS,
   clarificationFor, conditionKey, displayName, fallbackDraft, fileTokensIn, paymentSentence, reviewCondition,
@@ -16,25 +17,7 @@ export type PostResult =
   | { ok: true; value: ParseDraft; notes: string[] }
   | { ok: false; error: string };
 
-/** Parses the first balanced JSON object in model text (tolerates code fences, chatter or junk after it). */
-export function extractJson(text: string): unknown {
-  const start = text.indexOf('{');
-  if (start < 0) throw new Error('no JSON object in output');
-  let depth = 0;
-  let inString = false;
-  let escaped = false;
-  for (let i = start; i < text.length; i++) {
-    const ch = text[i];
-    if (inString) {
-      if (escaped) escaped = false;
-      else if (ch === '\\') escaped = true;
-      else if (ch === '"') inString = false;
-    } else if (ch === '"') inString = true;
-    else if (ch === '{') depth++;
-    else if (ch === '}' && --depth === 0) return JSON.parse(text.slice(start, i + 1));
-  }
-  throw new Error('unterminated JSON object (output cut off?)');
-}
+export { extractJson } from './json.ts';
 
 const KIND_ALIASES: Record<string, 'tests_pass' | 'file_present' | 'file_hash'> = {
   tests_pass: 'tests_pass', test_pass: 'tests_pass', tests: 'tests_pass', test: 'tests_pass',
@@ -87,8 +70,10 @@ function sharpenPattern(pattern: string, rawText: string): string {
  *  - cross-checks against the deterministic parser, adding literal requirements the model missed.
  * The model only points at phrases (`review`, `unclear`); code turns them into client_review conditions and
  * clarification sentences, and writes the payment half of the summary.
+ * `examples` (already guarded, see examples.ts) is added as one automatic check; client-review quotes about
+ * the same function are then covered by it.
  */
-export function postprocess(raw: unknown, req: ParseRequest): PostResult {
+export function postprocess(raw: unknown, req: ParseRequest, examples?: ExamplesDraft): PostResult {
   const rawText = req.rawText;
   if (!raw || typeof raw !== 'object') return { ok: false, error: 'output is not a JSON object' };
   const o = raw as Record<string, unknown>;
@@ -185,7 +170,8 @@ export function postprocess(raw: unknown, req: ParseRequest): PostResult {
   const isCovered = (q: string) =>
     (TESTS_PASS.test(q) && automatic.some((c) => c.kind === 'tests_pass')) ||
     automatic.some((c) => c.kind === 'file_present' && q.includes(stem(c.pathPattern))) ||
-    /[0-9a-f]{64}/.test(q);
+    /[0-9a-f]{64}/.test(q) ||
+    coveredByExamples(q, examples);
   const accept = (field: string, quotes: string[]) => {
     const kept: string[] = [];
     for (const quote of quotes) {
@@ -209,12 +195,12 @@ export function postprocess(raw: unknown, req: ParseRequest): PostResult {
     // Keep the longer of two overlapping quotes.
     return out.filter((x, i) => !out.some((y, j) => j !== i && bare(y).includes(bare(x)) && (bare(y) !== bare(x) || j < i)));
   };
-  const reviewQuotes = merge('review', accept('review', quotesOf(o.review)), fb.review);
+  const reviewQuotes = merge('review', accept('review', quotesOf(o.review)), fb.review.filter((q) => !coveredByExamples(q, examples)));
   const unclearQuotes = merge('unclear', accept('unclear', quotesOf(o.unclear)), fb.unclear)
     .filter((u) => !reviewQuotes.some((r) => bare(r).includes(bare(u)) || bare(u).includes(bare(r))));
 
   const keys = new Set<string>();
-  const unique = [...automatic, ...reviewQuotes.map(reviewCondition)].filter((d) => {
+  const unique = [...automatic, ...(examples ? [examples] : []), ...reviewQuotes.map(reviewCondition)].filter((d) => {
     const k = conditionKey(d);
     if (keys.has(k)) return false;
     keys.add(k);
@@ -223,11 +209,11 @@ export function postprocess(raw: unknown, req: ParseRequest): PostResult {
 
   const conditions: Condition[] = [];
   for (const [i, d] of unique.entries()) {
-    const r = ConditionSchema.safeParse({ ...d, id: `c${i + 1}` });
+    const r = (d.kind === 'examples' ? ExamplesConditionSchema : ConditionSchema).safeParse({ ...d, id: `c${i + 1}` });
     if (!r.success) {
       return { ok: false, error: `conditions[${i}]: ${r.error.issues.map((x) => `${x.path.join('.')} ${x.message}`).join('; ')}` };
     }
-    conditions.push(r.data);
+    conditions.push(r.data as Condition); // an `examples` check only gets here once the contract has the kind
   }
 
   const clarifications = unclearQuotes.map(clarificationFor);

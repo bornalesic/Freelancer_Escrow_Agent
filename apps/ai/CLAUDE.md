@@ -33,6 +33,10 @@ timeout) · `parse.ts` model → retry → fallback · `postprocess.ts` guards +
 deterministic parser · `explain.ts` + `facts.ts` + `templates.ts` explanations · `review.ts` advisory review
 · `colours.ts` colour names + warm/cool for `/review` · `glob.ts` path-pattern matching · `prompts.ts` versioned prompts · `mock.ts` AI_MODE=mock · `evalCheck.ts` eval scoring. Probes
 live in `scratch/` (git-ignored).
+AI assist (`docs/AI_ASSIST_PLAN.md`): `examples.ts` example checks for `/parse` · `assist.ts` shared plumbing
+(`runAssist`: model → guards → fallback) · `assistPrompts.ts` examples + assist prompts · `assistHandlers.ts`
+the `/assist/*` handler table · `hint.ts` · `clarify.ts` · `rewrite.ts` · `estimate.ts` · `answer.ts` · `team.ts`
+(match + split) · `conditionText.ts` · `json.ts` (`extractJson`).
 
 ## What `/explain` reads from `event.data` (tell WS3)
 All optional; missing keys fall back to the escrow. `role` (accepted/cancelled), `n` + `fileName`
@@ -181,6 +185,22 @@ prompt different, so a single run proves nothing (review-v1 looked right once an
    `review.expired` and for `decision.made` with `await_approval`. TypeScript forces this once the
    types land, because `TEMPLATES` is a `Record<LogEventType, …>`; add the matching keys in `facts.ts`.
 
+10. **AI assist features** (2026-10-18, `docs/AI_ASSIST_PLAN.md`; contract in `@escrow/shared` `assist.ts` +
+    `examples.ts`). All advisory, all with a deterministic fallback, all in mock mode (= the fallback + 400 ms).
+    - `/parse` example checks: when `AI_EXAMPLES` is not `off` **and** `ConditionSchema` has the `examples`
+      kind (`examplesInContract()`, false until WS3 flips it), examples written in the agreement or the
+      interview answers (`"A B" → "a-b"`, `slugify("A B") returns "a-b"`) for a JS function / CLI command named
+      in the agreement become one automatic check (fallback parser too). A client-review item about the same
+      function is dropped. `AI_EXAMPLES=model` also lets the model propose cases (not safe with the 2B, below).
+    - `/assist/hint` (dry run): `why` is code (failing test + actual vs expected from the output), `hint` is the
+      model, checked: only delivered files, no payment promises, injection → templates only.
+    - `/assist/clarify`, `/assist/rewrite` (a rewrite must parse into an automatic check with our own parser),
+      `/assist/estimate` (model sizes the job; bands and warnings are code), `/assist/answer` (quote must be in
+      the terms, no new numbers), `/assist/match`, `/assist/split` (grammar forces a listed member).
+    - `/explain` for a failed test now quotes expected vs actual (`assertionPair` in `facts.ts`).
+    Probe with the real model: `npx tsx ../../scratch/probe-assist.ts [runs] [examples,hint,clarify,rewrite,estimate,answer,team]`
+    from `apps/ai` (renders the examples and runs them on slugify v1/v2).
+
 ## Status (2026-10-17)
 Tasks 1–6 done: mock mode, server + health + warm-up, `/parse` (json_schema + guards + retry + fallback, 90 s
 budget), `/explain` SSE + `/explain/sync` (template on timeout/guard), templates, eval ≥ 8/10. Next: run with
@@ -235,3 +255,18 @@ passes all 17.
   the network to trusted in Avast first. `192.168.56.1` is a VirtualBox adapter, not the LAN IP.
 - **Don't run `npm install` while `npm run dev:ai` is running** on Windows: npm re-extracts `bare.exe` and
   the llama.cpp addon that the service has loaded, which fails and can crash the service.
+- **The 2B cannot write expected outputs** (2026-10-18, `scratch/probe-assist.ts`, demo agreement, 6–8 runs
+  each). examples-v1 guessed (`"Hello World 123" → "hello-world123"`): correct slugify-v2 failed 5/6. v2 (steps
+  before `expected`) was always right but only tested "Hello World", so the buggy v1 passed 8/8. v3 (one input
+  per rule, then apply all rules) skipped the strip rule (`"Hello World!" → "hello-world!"`): v2 failed 1/8.
+  A wrong expected output withholds an honest freelancer's money, so the default uses only examples people
+  wrote; the interview asks for one. Given an input, the 2B *does* apply rules step by step well: a bigger
+  model may make `AI_EXAMPLES=model` safe; re-run the probe before switching.
+- Real-model results for the assists (2B, GPU): hint 3.3–5 s, names the bug ("your function only lowercases
+  and replaces spaces... add a regex to strip non-alphanumeric characters"); one in three hit the token limit
+  before the predict bump. clarify 3–4 s; the slugify demo gets no questions after the relevance guard.
+  answer ~0.8 s, refuses injected instructions; the model once said "not answered" for "Do I need a README?",
+  hence the term-search backstop. estimate ~0.75 s. match 2–7 s, split ~2.3 s. rewrite ~1.2 s: the 2B's
+  rewrites are rarely checkable ("must execute quickly"), so the rule-based ones carry it.
+- After the change, `/explain` on slugify-v1's real spec output: "...did not pass (it expected "hello-world" but got
+  "hello,-world!")", 4/4 from the model. Parse eval still 17/17, explain eval 15/16.

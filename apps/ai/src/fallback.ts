@@ -1,10 +1,13 @@
-import type { Condition, ParseRequest, ParseResult } from '@escrow/shared';
+import type { Condition, ExamplesCondition, ParseRequest, ParseResult } from '@escrow/shared';
+import { coveredByExamples, literalExamplesDraft, type ExamplesDraft } from './examples.ts';
 
 // Deterministic regex parser. Used when the model is not loaded, times out, or fails validation twice,
 // and as a cross-check of the model's output. It must never invent anything: every condition comes
 // from literal text.
 
-export type DraftCondition = Condition extends infer C ? (C extends Condition ? Omit<C, 'id'> : never) : never;
+/** `examples` is not in ConditionSchema until WS3 lands it (docs/AI_ASSIST_PLAN.md); after that this equals Condition. */
+export type AnyCondition = Condition | ExamplesCondition;
+export type DraftCondition = AnyCondition extends infer C ? (C extends AnyCondition ? Omit<C, 'id'> : never) : never;
 
 export const DEFAULT_TEST_COMMAND = 'npm test';
 export const DEFAULT_TIMEOUT_SEC = 60;
@@ -94,12 +97,13 @@ export function hashConditions(text: string): { conditions: DraftCondition[]; fi
   return { conditions, files };
 }
 
-export function conditionKey(c: DraftCondition | Condition): string {
+export function conditionKey(c: DraftCondition | AnyCondition): string {
   switch (c.kind) {
     case 'tests_pass': return `tests_pass:${c.command}`;
     case 'file_hash': return `file_hash:${c.sha256}:${c.fileName ?? ''}`;
     case 'file_present': return `file_present:${c.pathPattern.toLowerCase()}`;
     case 'client_review': return `client_review:${c.description.toLowerCase()}`;
+    case 'examples': return `examples:${c.target.type === 'js_function' ? c.target.export : c.target.command}`;
   }
 }
 
@@ -112,6 +116,7 @@ export function paymentSentence(req: ParseRequest, conditions: DraftCondition[])
       case 'tests_pass': return [c.command === DEFAULT_TEST_COMMAND ? 'the tests pass' : `"${c.command}" passes`];
       case 'file_hash': return [`${c.fileName ?? 'the upload'} matches the agreed hash`];
       case 'file_present': return [`${displayName(c.pathPattern)} is included`];
+      case 'examples': return [`${c.target.type === 'js_function' ? c.target.export : `"${c.target.command}"`} gives the agreed output for every example`];
       case 'client_review': return [];
     }
   });
@@ -145,9 +150,21 @@ function summaryFor(req: ParseRequest, conditions: DraftCondition[]): string {
   return `${job ? `Job "${job}". ` : ''}${paymentSentence(req, conditions)}`;
 }
 
-export function fallbackParse(req: ParseRequest): Omit<ParseResult, 'ms'> {
+export interface FallbackOptions {
+  /** Add an `examples` check (only when the contract and the verifier support it). */
+  examples?: boolean;
+  /** Examples already proposed (literal + model); default: only the examples written in the agreement. */
+  draft?: ExamplesDraft;
+}
+
+export function fallbackParse(req: ParseRequest, opts: FallbackOptions = {}): Omit<ParseResult, 'ms'> {
   const d = fallbackDraft(req);
-  const conditions = [...d.conditions, ...d.review.map(reviewCondition)];
+  const examples = opts.examples ? (opts.draft ?? literalExamplesDraft(req.rawText)) : undefined;
+  const conditions: DraftCondition[] = [
+    ...d.conditions,
+    ...(examples ? [examples] : []),
+    ...d.review.filter((q) => !coveredByExamples(q, examples)).map(reviewCondition),
+  ];
   const clarifications = d.unclear.map(clarificationFor);
   if (d.hashMentionedWithoutValue) clarifications.push(MISSING_HASH_NOTE);
   if (!conditions.length) clarifications.push(NO_CONDITIONS_NOTE);

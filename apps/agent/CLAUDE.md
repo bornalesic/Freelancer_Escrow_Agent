@@ -129,6 +129,39 @@ WS1's `@escrow/wallet` lands; a real `/review` run against apps/ai once WS2 ship
    JSON-RPC (`BITCOIND_RPC_URL`, `BITCOIND_RPC_USER`, `BITCOIND_RPC_PASS`) mining to the agent wallet's
    address; `/dev/reset` only when `NODE_ENV !== 'production'`.
 
+## AI assist features (planned, after Integration 2) — `docs/AI_ASSIST_PLAN.md`
+Contract is already in `@escrow/shared` (`assist.ts`, `examples.ts`, additive). In tier order; stop at the freeze.
+1. **Generic proxy `POST /assist/:name`** (`AGENT_ROUTES.assist(':name')`). `name` not in `PROXIED_ASSISTS` →
+   `404`. Body → `ASSIST_SCHEMAS[name].request` (`400 { error, details }`). If `!ai.available()` → `503
+   { error: 'The AI assistant is not available right now' }`. Else POST to `aiUrl + AI_ROUTES.assist(name)` with
+   `AbortSignal.timeout(AI_ASSIST_TIMEOUT_MS)` (new env, default 20000), parse with `ASSIST_SCHEMAS[name].result`,
+   return it; any failure → `503`. Do **not** put it in `ai.exclusive()`: the user is waiting, and apps/ai
+   has its own priority limiter. No state change, no `LogEvent`. Add `AI_ASSIST_TIMEOUT_MS` to `config.ts`.
+2. **`examples` condition kind.** In `packages/shared/src/domain.ts` add `ExamplesConditionSchema` (from
+   `examples.ts`) to the `ConditionSchema` union and `'examples'` to `CONDITION_KINDS`. Update
+   `docs/CONTRACTS.md` §1 in the same commit. Verifier case (`verifier/index.ts`): write
+   `renderExamplesTest(c)` to a file **outside** the unpacked root, e.g.
+   `path.join(path.dirname(root), 'acceptance', `${c.id}.test.mjs`)`, then
+   `runCommand(examplesTestCommand(file), root, c.timeoutSec)` and build the result exactly like `tests_pass`.
+   Typecheck then shows every other exhaustive switch to update. The web's (`Terms.tsx`) belongs to WS4; tell
+   them, or add a minimal case. Tests: slugify-v1 fails `slugify("Hello, World!") → "hello-world"`, v2
+   passes. `packages/shared/test/assist.test.ts` shows how. Once the union accepts the kind, apps/ai turns
+   examples written in an agreement (`"A B" → "a-b"`) into this check, so merge this to `main` and have the
+   AI laptop pull it at the same time.
+3. **Dry run `POST /escrows/:id/dry-run`** (multipart `file`, same 20 MB limit, no `payoutInvoice`). Allowed
+   in `PROPOSED`…`FUNDED`, before the deadline; `409` if a dry run for this escrow is already running. Unpack
+   into `work/<id>/dry-<timestamp>` (`prepareWorkspace`), run every automatic condition with `checkCondition`,
+   and delete the folder afterwards. If any check failed and the AI is up, `POST AI_ROUTES.assist('hint')` with
+   `{ escrow, results, files: buildReviewFiles(root) }` (timeout `AI_ASSIST_TIMEOUT_MS`). Return
+   `DryRunResponse { results, passed, total, hints? }` (`hints` absent when all passed or the AI failed). No
+   state change, no `LogEvent`; log one line.
+4. *(Tier C, only if all of the above are done)* Q&A forwarding: `Escrow.questions?` (id, question, status
+   `answered_by_ai | waiting_for_client | answered_by_client`, answer, quote), `POST /escrows/:id/questions
+   { question }` (the agent calls `/assist/answer` and stores the result), and `POST
+   /escrows/:id/questions/:qid/answer { answer, addToTerms, clientToken }`, which, with `addToTerms` in
+   `PROPOSED`, appends the answer to `rawText` and re-parses (new `termsHash`, acceptances cleared). New event
+   types `qa.asked`, `qa.answered`; tell WS2 so `TEMPLATES` gets them.
+
 ## Which events get `explain: true`
 `terms.proposed`, `terms.agreed`, `funding.settled`, `verify.condition_result` (failures only),
 `decision.made`, `review.disputed`, `review.expired`, `payout.settled`, `refund.settled`, `error`.
