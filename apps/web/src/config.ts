@@ -1,6 +1,9 @@
 // Where this screen finds the agent and its own party server (and, on /agent, both party servers).
 // Precedence: query param (?agent=&party=&client=&freelancer=) > value remembered this tab > env.
 // Remembering the query values in sessionStorage keeps them across reloads and route changes.
+// Env defaults that say "localhost" follow the page's own host when it was opened from another laptop.
+
+import { onPageHost } from './lib/pageHost';
 
 const STORAGE_KEY = 'escrow.web.overrides';
 
@@ -50,12 +53,13 @@ function load(): WebConfig {
   if (q.has('freelancer')) o.freelancer = q.get('freelancer') || undefined;
   if (q.has('fixture')) o.fixture = q.get('fixture') !== '0';
   writeStored(o);
+  const env = (u: string | undefined) => (u ? onPageHost(u, window.location.hostname) : undefined);
 
   return {
-    agentUrl: trimSlash(o.agent ?? import.meta.env.VITE_AGENT_URL ?? 'http://localhost:4000'),
-    partyUrl: trimSlash(o.party ?? import.meta.env.VITE_PARTY_URL ?? 'http://localhost:4101'),
-    clientPartyUrl: optional(o.client ?? import.meta.env.CLIENT_PARTY_URL),
-    freelancerPartyUrl: optional(o.freelancer ?? import.meta.env.FREELANCER_PARTY_URL),
+    agentUrl: trimSlash(o.agent ?? env(import.meta.env.VITE_AGENT_URL ?? 'http://localhost:4000')!),
+    partyUrl: trimSlash(o.party ?? env(import.meta.env.VITE_PARTY_URL ?? 'http://localhost:4101')!),
+    clientPartyUrl: optional(o.client ?? env(import.meta.env.CLIENT_PARTY_URL)),
+    freelancerPartyUrl: optional(o.freelancer ?? env(import.meta.env.FREELANCER_PARTY_URL)),
     fixture: o.fixture ?? false,
   };
 }
