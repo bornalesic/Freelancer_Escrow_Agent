@@ -17,6 +17,10 @@ export interface Config {
   aiParseTimeoutMs: number;
   aiExplainTimeoutMs: number;
   aiReviewTimeoutMs: number;
+  /** Agent → apps/ai `/assist/*` (the proxy and the dry run's hints). */
+  aiAssistTimeoutMs: number;
+  /** AI_EXAMPLES is not `off`: examples written in the agreement become an `examples` check (also in our fallback). */
+  examples: boolean;
   /** How long the client has to approve or dispute before the agent releases. */
   reviewWindowSec: number;
   network: string;
@@ -73,6 +77,8 @@ export function loadConfig(env: Env = process.env): Config {
     aiParseTimeoutMs: num(env, 'AI_PARSE_TIMEOUT_MS', 90_000),
     aiExplainTimeoutMs: num(env, 'AI_EXPLAIN_TIMEOUT_MS', 30_000),
     aiReviewTimeoutMs: num(env, 'AI_REVIEW_TIMEOUT_MS', 30_000),
+    aiAssistTimeoutMs: num(env, 'AI_ASSIST_TIMEOUT_MS', 20_000),
+    examples: str(env, 'AI_EXAMPLES')?.toLowerCase() !== 'off',
     reviewWindowSec: num(env, 'REVIEW_WINDOW_SEC', 120),
     network: str(env, 'RGB_NETWORK') ?? 'regtest',
     assetId,

@@ -17,8 +17,9 @@ export type EscrowState =
   | 'REFUNDING' | 'REFUNDED' | 'CANCELLED';
 
 /**
- * An acceptance condition. Discriminated on `kind`. The verifier checks `tests_pass`, `file_hash` and
- * `file_present` automatically; `client_review` is judged by the client, after QVAC writes an advisory report.
+ * An acceptance condition. Discriminated on `kind`. The verifier checks `tests_pass`, `file_hash`,
+ * `file_present` and `examples` automatically; `client_review` is judged by the client, after QVAC writes an
+ * advisory report.
  */
 export type Condition =
   | {
@@ -45,6 +46,14 @@ export type Condition =
       id: string;
       kind: 'client_review';
       description: string;        // what the client judges, e.g. "The logo uses warm colours"
+    }
+  | {
+      id: string;
+      kind: 'examples';           // agreed inputs → expected outputs (packages/shared/src/examples.ts)
+      description: string;
+      target: { type: 'js_function'; export: string; file?: string } | { type: 'command'; command: string };
+      cases: { input: string; expected: string }[]; // 1–10
+      timeoutSec: number;
     };
 
 export interface Acceptance {
@@ -243,8 +252,8 @@ Selected by `WALLET_MODE=real|mock`.
 | GET  | `/escrows/:id/deliveries/:n/files` | – | `{ path, sizeBytes }[]` (the unpacked delivery) |
 | GET  | `/escrows/:id/deliveries/:n/files/*` | – | the raw file, sent with `Content-Security-Policy: sandbox` |
 | POST | `/escrows/:id/approve` | `{ deliveryN, decision: 'approve' \| 'dispute', reason?, clientToken }` | `Escrow`; `403` wrong token, `409` not `AWAITING_APPROVAL` or not the latest delivery, `400` dispute without `reason` |
-| POST | `/escrows/:id/dry-run` | multipart: `file` | `DryRunResponse` (verifier on a practice upload + QVAC fix hints; no state change) — planned, WS3 |
-| POST | `/assist/:name` | the assist's request (`ASSIST_SCHEMAS`) | its result; `404` unknown/not proxied name, `503` AI unreachable — planned, WS3 |
+| POST | `/escrows/:id/dry-run` | multipart: `file` | `DryRunResponse` (verifier on a practice upload + QVAC fix hints; no state change); `409` unless `FUNDED`, after the deadline, or while one runs |
+| POST | `/assist/:name` | the assist's request (`ASSIST_SCHEMAS`) | its result; `404` unknown/not proxied name, `400` invalid body, `503` AI unreachable or invalid answer |
 | POST | `/escrows/:id/retry-step` | `{ force? }` | `Escrow` (re-run a stuck step now; `force` re-sends a payout/refund whose outcome is unknown after a crash — check the wallet first) |
 | POST | `/dev/mine` | `{ blocks?: number }` | `{ height }` (regtest only) |
 | POST | `/dev/reset` | – | clears db (dev only) |
@@ -278,10 +287,12 @@ output fails the guards). All advisory; nothing here reaches `decide()`. The age
 `POST /assist/:name` for the names in `PROXIED_ASSISTS` (all but `hint`, which the agent calls inside
 `POST /escrows/:id/dry-run`, response `DryRunResponse`). Agent → AI timeout: `AI_ASSIST_TIMEOUT_MS`.
 
-**`examples` condition** (`packages/shared/src/examples.ts`, standalone until WS3 adds it to `ConditionSchema`):
+**`examples` condition** (`packages/shared/src/examples.ts`, part of `ConditionSchema`, §1):
 `{ id, kind: 'examples', description, target: { type: 'js_function', export, file? } | { type: 'command',
 command }, cases: { input, expected }[] (1–10), timeoutSec }`. The verifier writes `renderExamplesTest(c)`
-outside the delivery and runs `examplesTestCommand(file)` in the delivery root; passed = exit code 0.
+to a fresh temp folder outside the delivery and runs `examplesTestCommand(file)` in the delivery root. Passed =
+exit code 0 **and** the test runner's final summary counts every case as passed (a delivery that exits with
+code 0 on import would otherwise pass without running a single example).
 
 ```ts
 export interface ParseResult {

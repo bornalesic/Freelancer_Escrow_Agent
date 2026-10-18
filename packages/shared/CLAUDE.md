@@ -51,3 +51,7 @@ the four `review.*` event types, `ReviewRequest`, `ApproveRequest`, the `POST /e
 `clientToken` must never be a field of `EscrowSchema`: escrows are broadcast to everyone.
 Breaking for anyone with an exhaustive `switch` over `EscrowState`, `Condition['kind']`, `Decision['action']`
 or `LogEventType` (e.g. `apps/ai` `TEMPLATES`): they must handle the new values.
+
+## AI assist (WS2's contract, `assist.ts` + `examples.ts`)
+`examples` is part of `ConditionSchema` and `CONDITION_KINDS` (WS3, with the agent's verifier). Breaking for
+exhaustive switches over `Condition['kind']`: apps/ai and apps/web already handled it.

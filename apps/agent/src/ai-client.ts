@@ -1,9 +1,11 @@
 import {
   AI_ROUTES,
+  ASSIST_SCHEMAS,
   AiReviewSchema,
   ExplainStreamChunkSchema,
   ParseResultSchema,
   type AiReview,
+  type AssistName,
   type Escrow,
   type ExplanationSource,
   type LogEvent,
@@ -11,6 +13,7 @@ import {
   type ParseResult,
   type ReviewRequest,
 } from '@escrow/shared';
+import type { z } from 'zod';
 import type { Config } from './config';
 import { log } from './log';
 import { fallbackParse } from './parse-fallback';
@@ -68,7 +71,7 @@ export class AiClient {
     const started = Date.now();
     if (!(await this.available())) {
       log.warn('ai is down, using the fallback parser');
-      return fallbackParse(req, this.config.verifyDefaultTimeoutSec, started);
+      return fallbackParse(req, this.config.verifyDefaultTimeoutSec, started, this.config.examples);
     }
     for (let attempt = 1; attempt <= 2; attempt++) {
       try {
@@ -86,7 +89,7 @@ export class AiClient {
         if (timedOut) break; // don't wait another full timeout
       }
     }
-    return fallbackParse(req, this.config.verifyDefaultTimeoutSec, started);
+    return fallbackParse(req, this.config.verifyDefaultTimeoutSec, started, this.config.examples);
   }
 
   /**
@@ -142,6 +145,23 @@ export class AiClient {
     });
     if (!res.ok) throw new Error(`HTTP ${res.status}: ${(await res.text()).slice(0, 200)}`);
     return AiReviewSchema.parse(await res.json());
+  }
+
+  /**
+   * One `/assist/*` call (advisory: interview, rewrites, hints, ...). Throws when the AI is down or answers
+   * with something that isn't the assist's result. Not queued behind `exclusive()`: a person is waiting, and
+   * apps/ai has its own priority limiter.
+   */
+  async assist<N extends AssistName>(name: N, body: unknown): Promise<z.infer<(typeof ASSIST_SCHEMAS)[N]['result']>> {
+    if (!(await this.available())) throw new Error('ai is down');
+    const res = await fetch(this.config.aiUrl + AI_ROUTES.assist(name), {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(this.config.aiAssistTimeoutMs),
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}: ${(await res.text()).slice(0, 200)}`);
+    return ASSIST_SCHEMAS[name].result.parse(await res.json()) as z.infer<(typeof ASSIST_SCHEMAS)[N]['result']>;
   }
 
   async health(): Promise<boolean> {

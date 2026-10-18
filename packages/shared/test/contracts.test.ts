@@ -40,14 +40,18 @@ describe('conditions', () => {
     ['file_present', { id: 'c1', kind: 'file_present', description: 'd', pathPattern: 'README*' }, true],
     ['client_review', { id: 'c1', kind: 'client_review', description: 'Warm colours' }, true],
     ['client_review without description', { id: 'c1', kind: 'client_review', description: '' }, false],
+    ['examples', { id: 'c1', kind: 'examples', description: 'd', target: { type: 'js_function', export: 'slugify' }, cases: [{ input: 'A B', expected: 'a-b' }], timeoutSec: 30 }, true],
+    ['examples without cases', { id: 'c1', kind: 'examples', description: 'd', target: { type: 'command', command: 'node main.js' }, cases: [], timeoutSec: 30 }, false],
     ['unknown kind', { id: 'c1', kind: 'vibes', description: 'd' }, false],
   ])('%s → valid=%s', (_name, input, ok) => {
     expect(ConditionSchema.safeParse(input).success).toBe(ok);
   });
 
   it('CONDITION_KINDS lists every kind; only client_review is not automatic', () => {
-    expect([...CONDITION_KINDS].sort()).toEqual(['client_review', 'file_hash', 'file_present', 'tests_pass']);
+    expect([...CONDITION_KINDS].sort()).toEqual(['client_review', 'examples', 'file_hash', 'file_present', 'tests_pass']);
     expect(escrow.conditions.map(isAutomaticCondition)).toEqual([true, false]);
+    const examples = ConditionSchema.parse({ id: 'c3', kind: 'examples', description: 'd', target: { type: 'js_function', export: 'f' }, cases: [{ input: 'a', expected: 'b' }], timeoutSec: 30 });
+    expect(isAutomaticCondition(examples)).toBe(true);
   });
 
   it('termsHash covers client_review wording, so both parties agree on exactly what the client judges', () => {

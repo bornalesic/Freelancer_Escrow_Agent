@@ -15,7 +15,9 @@ src/decide.ts        PURE decide(escrow, results, now): Decision   ← the only 
 src/orchestrator.ts  drives each step: parse → fund watch → verify → decide → [client review] → pay/refund → settle
 src/verifier/        index.ts (runs automatic conditions), tests.ts, hash.ts, present.ts, unpack.ts,
                      files.ts (fresh unpack under data/files for the client + path-checked file serving),
-                     excerpt.ts (file tree + text excerpts for /review)
+                     excerpt.ts (file tree + text excerpts for /review),
+                     examples.ts (`examples` condition: rendered node:test file, pass only on the runner's summary)
+src/dry-run.ts       POST /escrows/:id/dry-run: verifier on a practice upload + /assist/hint; no state change
 src/ai-client.ts     calls apps/ai (/parse, /explain SSE, /review) with timeouts + template fallback
 src/client-token.ts  create clientToken, store its sha256, constant-time check for /approve
 src/hub.ts           WebSocket hub: snapshot on connect, broadcast escrow/event/explanation messages
@@ -26,7 +28,7 @@ src/parse-fallback.ts  WS2's deterministic parser (apps/ai/src/fallback.ts) + ou
 src/templates.ts     explanation/review text when the AI is down
 ```
 
-## Status (implemented, `npm test -w apps/agent`: 321 tests)
+## Status (implemented, `npm test -w apps/agent`: 348 tests)
 All tasks 1–7 below are implemented, including client review, and covered by `test/e2e.test.ts`
 (fail-then-pass → released, deadline → refunded, validation/reparse/cancel, client review: dispute →
 v2 → approve → released, and no answer → released), `test/verifier.test.ts` and `test/decide.test.ts`
@@ -129,8 +131,20 @@ WS1's `@escrow/wallet` lands; a real `/review` run against apps/ai once WS2 ship
    JSON-RPC (`BITCOIND_RPC_URL`, `BITCOIND_RPC_USER`, `BITCOIND_RPC_PASS`) mining to the agent wallet's
    address; `/dev/reset` only when `NODE_ENV !== 'production'`.
 
-## AI assist features (planned, after Integration 2) — `docs/AI_ASSIST_PLAN.md`
-Contract is already in `@escrow/shared` (`assist.ts`, `examples.ts`, additive). In tier order; stop at the freeze.
+## AI assist features — `docs/AI_ASSIST_PLAN.md`
+Contract is in `@escrow/shared` (`assist.ts`, `examples.ts`). **1–3 are done** (`test/assist.test.ts`,
+`test/examples.test.ts`); 4 is not started. Where the code differs from the plan below:
+- `examples` test file: a fresh `mkdtemp` in the OS temp folder, written right before the run and deleted after,
+  not `dirname(root)/acceptance` (with a zip of one top folder, `dirname(root)` is the delivery's own folder,
+  and an earlier `tests_pass` run there could have replaced the file).
+- `examples` passes only if exit code 0 **and** the runner's final summary counts every case as passed, with no
+  file-level "✔ <file>" line. See "Learned the hard way".
+- Dry run: the excerpts for `/assist/hint` are taken from the upload **before** the checks run (its test command
+  can change the folder). `400` without a file, like deliveries.
+- The fallback parser also emits `examples` (WS2's `fallbackParse(req, { examples })`); `AI_EXAMPLES=off`
+  turns it off in the agent as well as in apps/ai (`config.examples`).
+- Dry run is `FUNDED` only (WS2's final spec; the UI offers it only there).
+
 1. **Generic proxy `POST /assist/:name`** (`AGENT_ROUTES.assist(':name')`). `name` not in `PROXIED_ASSISTS` →
    `404`. Body → `ASSIST_SCHEMAS[name].request` (`400 { error, details }`). If `!ai.available()` → `503
    { error: 'The AI assistant is not available right now' }`. Else POST to `aiUrl + AI_ROUTES.assist(name)` with
@@ -149,7 +163,8 @@ Contract is already in `@escrow/shared` (`assist.ts`, `examples.ts`, additive). 
    examples written in an agreement (`"A B" → "a-b"`) into this check, so merge this to `main` and have the
    AI laptop pull it at the same time.
 3. **Dry run `POST /escrows/:id/dry-run`** (multipart `file`, same 20 MB limit, no `payoutInvoice`). Allowed
-   in `PROPOSED`…`FUNDED`, before the deadline; `409` if a dry run for this escrow is already running. Unpack
+   in `FUNDED` only (where the UI offers it; narrowed from `PROPOSED`…`FUNDED` by WS2's final spec), before the
+   deadline; unknown escrow → `404 "Escrow not found"` (the UI tells that apart from a missing route); `409` if a dry run for this escrow is already running. Unpack
    into `work/<id>/dry-<timestamp>` (`prepareWorkspace`), run every automatic condition with `checkCondition`,
    and delete the folder afterwards. If any check failed and the AI is up, `POST AI_ROUTES.assist('hint')` with
    `{ escrow, results, files: buildReviewFiles(root) }` (timeout `AI_ASSIST_TIMEOUT_MS`). Return
@@ -191,6 +206,13 @@ review window runs out. `/approve` without the right `clientToken` returns `403`
 - Our own fallback parser drifted from WS2's: it missed `index.html` in the landing agreement, put the
   raw ISO deadline in the summary, and turned "clean.py" into a `client_review` (`\bclean\b` matches
   before a dot). It scored 6/17 on the fixtures. Now we import WS2's parser instead of keeping a copy.
+- **A delivery can fake an `examples` pass.** The delivery's module is imported into the test process, so
+  `process.exit(0)` on import makes `node --test` report the *file* as one passed test with exit code 0, and
+  nothing ran. Printing fake "✔ …" and "ℹ pass" lines doesn't help it: the runner's own summary comes last.
+  `examplesPassed()` checks that summary and refuses the file-level line. The verifier is still not a sandbox
+  (the delivery runs as our user), so this stops the cheap trick, not a determined attacker.
+- vitest collected the freelancers' `slugify.test.js` from `data/work/` after real demo runs (the agent's
+  data dir is inside `apps/agent`), and `npm test` went red. `vitest.config.ts` now only includes `test/`.
 - This laptop's wall clock also steps (~2.9 s, seen as `Date.now() - monotonic` jumping in the test run;
   a 15 s probe can miss it). Tests that wait for a deadline must wait on the agent's `safeNow()`, not
   `Date.now()`, or they flake.

@@ -7,9 +7,10 @@ import { DEFAULT_TIMEOUT_SEC, fallbackParse as parseLiterally } from '@escrow/ai
 /**
  * Deterministic parser used when apps/ai is down, slow, or returns garbage twice, so the demo never
  * blocks on the model. A test timeout the agreement doesn't state uses VERIFY_DEFAULT_TIMEOUT_SEC.
+ * With `examples`, inputs and outputs written in the agreement ("A B" → "a-b") become an `examples` check.
  */
-export function fallbackParse(req: ParseRequest, defaultTimeoutSec: number, startedAt = Date.now()): ParseResult {
-  const r = parseLiterally(req);
+export function fallbackParse(req: ParseRequest, defaultTimeoutSec: number, startedAt = Date.now(), examples = true): ParseResult {
+  const r = parseLiterally(req, { examples });
   return {
     ...r,
     conditions: r.conditions.map((c) =>
