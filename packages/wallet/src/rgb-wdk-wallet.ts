@@ -194,8 +194,11 @@ export class RgbWdkWallet implements EscrowWallet {
     })
   }
 
-  async createInvoice(p: { assetId: string; amount: string }): Promise<{ invoice: string; recipientId: string; expiresAt: string }> {
+  async createInvoice(p: { assetId: string; amount: string; expiresInSec?: number }): Promise<{ invoice: string; recipientId: string; expiresAt: string }> {
     const amount = toSdkAmount(p.amount, 'invoice amount')
+    if (p.expiresInSec !== undefined && (!Number.isInteger(p.expiresInSec) || p.expiresInSec <= 0)) {
+      throw new WalletError(`expiresInSec must be a positive whole number of seconds, got ${p.expiresInSec}`)
+    }
     return this.#run(async () => {
       const account = this.#ready()
       // A wallet cannot bind an invoice to an asset it has never seen (AssetNotFound), so its first one
@@ -207,7 +210,8 @@ export class RgbWdkWallet implements EscrowWallet {
         amount,
         witness: false as const,
         minConfirmations: this.#opts.minConfirmations,
-        durationSeconds: INVOICE_TTL_SEC,
+        // rgb-sdk passes this through to the invoice (verified by the probe: expiry was exactly as asked).
+        durationSeconds: p.expiresInSec ?? INVOICE_TTL_SEC,
       }
       let inv
       try {

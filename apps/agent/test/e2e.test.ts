@@ -272,9 +272,9 @@ describe('escrow flow (stub wallet)', () => {
     expect(messages.some((m) => m.kind === 'explanation_done' && m.source === 'ai')).toBe(true);
     ws.close();
 
-    // Agent wallet: +50 in, −50 out.
+    // Agent wallet: +51 in (reward + 2% fee), −50 out: the service keeps the 1 fee.
     const wallet = await t.call('GET', '/wallet');
-    expect(wallet.body.assets[0].settled).toBe('0');
+    expect(wallet.body.assets[0].settled).toBe('1000000');
 
     // Restart on the same data dir: state and log survive.
     await t.agent.app.close();

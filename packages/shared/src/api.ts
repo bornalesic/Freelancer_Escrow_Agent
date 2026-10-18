@@ -16,6 +16,12 @@ export const AGENT_ROUTES = {
   escrow: (id: string) => `/escrows/${id}`,
   reparse: (id: string) => `/escrows/${id}/reparse`,
   accept: (id: string) => `/escrows/${id}/accept`,
+  publish: (id: string) => `/escrows/${id}/publish`,
+  take: (id: string) => `/escrows/${id}/take`,
+  /** A freelancer's counteroffer on an OPEN listing. */
+  offers: (id: string) => `/escrows/${id}/offers`,
+  acceptOffer: (id: string, offerId: string) => `/escrows/${id}/offers/${offerId}/accept`,
+  withdrawOffer: (id: string, offerId: string) => `/escrows/${id}/offers/${offerId}/withdraw`,
   cancel: (id: string) => `/escrows/${id}/cancel`,
   refundInvoice: (id: string) => `/escrows/${id}/refund-invoice`,
   funded: (id: string) => `/escrows/${id}/funded`,
@@ -52,6 +58,8 @@ export const PARTY_ROUTES = {
   walletRefresh: '/wallet/refresh',
   walletTransfers: '/wallet/transfers', // ?assetId=
   walletSign: '/wallet/sign',
+  /** The client's pre-authorisation: pay reward + fee into escrow automatically when a freelancer takes the job. */
+  autopay: '/autopay',
 } as const;
 
 // ---- Common ------------------------------------------------------------------
@@ -108,8 +116,71 @@ export type EscrowDetailResponse = z.infer<typeof EscrowDetailResponseSchema>;
 
 export const ReparseRequestSchema = z.object({
   rawText: z.string().trim().min(1).max(10_000).optional(),
+  /** Required for marketplace escrows (published once): only the client edits its listing. */
+  clientToken: z.string().min(1).max(200).optional(),
 });
 export type ReparseRequest = z.infer<typeof ReparseRequestSchema>;
+
+/**
+ * `POST /escrows/:id/publish`: the client approves the proposed requirements. Counts as the client
+ * accepting the current termsHash; the listing goes OPEN. Refused without an automatic check.
+ */
+export const PublishRequestSchema = z.object({
+  termsHash: Sha256HexSchema, // the exact version the client saw
+  clientToken: z.string().min(1).max(200),
+});
+export type PublishRequest = z.infer<typeof PublishRequestSchema>;
+
+/** `POST /escrows/:id/take`: a freelancer accepts an OPEN listing at its terms. First one wins. */
+export const TakeRequestSchema = z.object({ termsHash: Sha256HexSchema });
+export type TakeRequest = z.infer<typeof TakeRequestSchema>;
+
+/**
+ * `POST /escrows/:id/take` response: the escrow plus the one-time `freelancerToken` the freelancer's
+ * session keeps to deliver and cancel. Like `clientToken`, never part of `EscrowSchema`.
+ */
+export const TakeResponseSchema = EscrowSchema.extend({ freelancerToken: z.string().regex(/^[0-9a-f]{64}$/) });
+export type TakeResponse = z.infer<typeof TakeResponseSchema>;
+
+/**
+ * `POST /escrows/:id/offers`: a freelancer offers to do an OPEN listing for a lower reward. `termsHash` is
+ * the listing version the freelancer saw; the offer's own termsHash (same terms, this amount and its fee)
+ * is computed by the agent and is what both sides end up accepting.
+ */
+export const MakeOfferRequestSchema = z.object({
+  termsHash: Sha256HexSchema,
+  amount: AmountSchema.refine((a) => BigInt(a) > 0n, 'must be greater than zero'),
+  note: z.string().trim().max(500).optional(),
+});
+export type MakeOfferRequest = z.infer<typeof MakeOfferRequestSchema>;
+
+/**
+ * `POST /escrows/:id/offers` response. `offerToken` is shown once: it withdraws the offer and, if the
+ * client accepts it, it is this freelancer's `freelancerToken` for the job (deliver, cancel, files).
+ */
+export const MakeOfferResponseSchema = z.object({
+  escrow: EscrowSchema,
+  offerId: z.string(),
+  offerToken: z.string().regex(/^[0-9a-f]{64}$/),
+});
+export type MakeOfferResponse = z.infer<typeof MakeOfferResponseSchema>;
+
+/** `POST /escrows/:id/offers/:offerId/accept`: the client takes this offer. `termsHash` = the offer's. */
+export const AcceptOfferRequestSchema = z.object({
+  termsHash: Sha256HexSchema,
+  clientToken: z.string().min(1).max(200),
+});
+export type AcceptOfferRequest = z.infer<typeof AcceptOfferRequestSchema>;
+
+/** `POST /escrows/:id/offers/:offerId/withdraw`: the freelancer who made it takes it back. */
+export const WithdrawOfferRequestSchema = z.object({ offerToken: z.string().min(1).max(200) });
+export type WithdrawOfferRequest = z.infer<typeof WithdrawOfferRequestSchema>;
+
+/**
+ * Header carrying a client or freelancer token where a body can't (file previews in <img>, via fetch).
+ * A header, not a query parameter: request URLs are logged, tokens never are.
+ */
+export const ESCROW_TOKEN_HEADER = 'x-escrow-token';
 
 export const AcceptRequestSchema = z.object({
   role: PartyRoleSchema,
@@ -119,17 +190,29 @@ export const AcceptRequestSchema = z.object({
 });
 export type AcceptRequest = z.infer<typeof AcceptRequestSchema>;
 
-export const CancelRequestSchema = z.object({ role: PartyRoleSchema });
+export const CancelRequestSchema = z.object({
+  role: PartyRoleSchema,
+  /** The role's clientToken / freelancerToken; required for marketplace escrows. */
+  token: z.string().min(1).max(200).optional(),
+});
 export type CancelRequest = z.infer<typeof CancelRequestSchema>;
 
-export const RefundInvoiceRequestSchema = z.object({ invoice: z.string().trim().min(1).max(4096) });
+export const RefundInvoiceRequestSchema = z.object({
+  invoice: z.string().trim().min(1).max(4096),
+  /** Required for marketplace escrows: whoever sets the refund invoice decides where a refund goes. */
+  clientToken: z.string().min(1).max(200).optional(),
+});
 export type RefundInvoiceRequest = z.infer<typeof RefundInvoiceRequestSchema>;
 
 export const FundedRequestSchema = z.object({ txid: z.string().trim().min(1).max(200) });
 export type FundedRequest = z.infer<typeof FundedRequestSchema>;
 
 /** Text fields of the multipart `POST /escrows/:id/deliveries` (plus the `file` part). */
-export const DeliveryFieldsSchema = z.object({ payoutInvoice: z.string().trim().min(1).max(4096) });
+export const DeliveryFieldsSchema = z.object({
+  payoutInvoice: z.string().trim().min(1).max(4096),
+  /** Required once a freelancer took the listing: only that freelancer delivers. */
+  freelancerToken: z.string().min(1).max(200).optional(),
+});
 export type DeliveryFields = z.infer<typeof DeliveryFieldsSchema>;
 
 export const ApproveRequestSchema = z
@@ -145,8 +228,11 @@ export const ApproveRequestSchema = z
   });
 export type ApproveRequest = z.infer<typeof ApproveRequestSchema>;
 
-/** `GET /escrows/:id/deliveries/:n/files`. */
-export const DeliveryFilesResponseSchema = z.array(DeliveryFileSchema);
+/**
+ * `GET /escrows/:id/deliveries/:n/files`. `previewable`: the caller may open this file now (before release
+ * only images are previews, and only for the client and the agent's laptop).
+ */
+export const DeliveryFilesResponseSchema = z.array(DeliveryFileSchema.extend({ previewable: z.boolean().optional() }));
 export type DeliveryFilesResponse = z.infer<typeof DeliveryFilesResponseSchema>;
 
 export const RetryStepRequestSchema = z.object({
@@ -175,8 +261,34 @@ export const PartyHealthResponseSchema = z.object({
 });
 export type PartyHealthResponse = z.infer<typeof PartyHealthResponseSchema>;
 
-export const InvoiceRequestSchema = z.object({ assetId: z.string().min(1), amount: AmountSchema });
+export const InvoiceRequestSchema = z.object({
+  assetId: z.string().min(1),
+  amount: AmountSchema,
+  /** How long the invoice stays payable. A payout invoice must outlive the review window. */
+  expiresInSec: z.number().int().positive().max(30 * 24 * 3600).optional(),
+});
 export type InvoiceRequest = z.infer<typeof InvoiceRequestSchema>;
+
+/**
+ * `POST /autopay` on the client's party server, sent by the client UI when the client approves a listing.
+ * When a freelancer takes it, the party server attaches a refund invoice (valid until after the deadline)
+ * and pays exactly reward + fee into escrow. Only from the client's own laptop.
+ */
+export const AutopayRequestSchema = z.object({
+  escrowId: z.string().min(1).max(100),
+  clientToken: z.string().min(1).max(200),
+});
+export type AutopayRequest = z.infer<typeof AutopayRequestSchema>;
+
+export const AutopayStatusSchema = z.object({
+  escrowId: z.string(),
+  total: AmountSchema,                                       // the most it pays: reward + fee when authorised
+                                                             // (an accepted counteroffer costs less, never more)
+  status: z.enum(['waiting', 'paying', 'paid', 'failed', 'done']),
+  error: z.string().optional(),
+  txid: z.string().optional(),
+});
+export type AutopayStatus = z.infer<typeof AutopayStatusSchema>;
 
 export const InvoiceResponseSchema = z.object({
   invoice: z.string(),

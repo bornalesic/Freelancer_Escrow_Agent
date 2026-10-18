@@ -17,6 +17,7 @@ coverage/
 .wallets/
 .mock-ledger.json*
 apps/agent/data/
+apps/party/data/
 **/data/work/
 **/data/deliverables/
 

@@ -65,6 +65,18 @@ export class StubWallet implements EscrowWallet {
     return true;
   }
 
+  /** Pretend the client's payment to one of our invoices failed (tests: the listing reopens). */
+  simulateFailedIncoming(recipientId: string): boolean {
+    const inv = this.invoices.get(recipientId);
+    if (!inv) return false;
+    const id = randomBytes(32).toString('hex');
+    this.transfersList.push({
+      id: id.slice(0, 12), direction: 'incoming', assetId: inv.assetId, amount: inv.amount,
+      status: 'failed', rawStatus: 'Failed', txid: id, recipientId, settleAt: 0,
+    });
+    return true;
+  }
+
   async refresh(): Promise<void> {
     this.tick();
   }

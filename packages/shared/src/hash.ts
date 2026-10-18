@@ -18,15 +18,20 @@ export function canonicalJson(value: unknown): string {
 export interface Terms {
   title: string;
   amount: string;
+  /** The service fee is part of the price, so a different fee is different terms. */
+  fee?: string | undefined;
   assetId: string;
   deadline: string;
   conditions: Condition[];
 }
 
-/** sha256 of the canonical JSON of exactly { title, amount, assetId, deadline, conditions }. */
+/**
+ * sha256 of the canonical JSON of exactly { title, amount, fee, assetId, deadline, conditions }.
+ * An absent fee is left out by canonicalJson, so terms from before the fee keep their hash.
+ */
 export function termsHash(t: Terms): string {
-  const { title, amount, assetId, deadline, conditions } = t;
-  return sha256Hex(canonicalJson({ title, amount, assetId, deadline, conditions }));
+  const { title, amount, fee, assetId, deadline, conditions } = t;
+  return sha256Hex(canonicalJson({ title, amount, fee, assetId, deadline, conditions }));
 }
 
 const K = new Uint32Array([

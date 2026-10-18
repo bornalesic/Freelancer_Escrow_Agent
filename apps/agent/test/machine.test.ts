@@ -9,9 +9,10 @@ import { tmpDir } from './helpers';
 // Every arrow in docs/ESCROW_FLOW.md (PROPOSED → DRAFT is a re-parse). Nothing else is allowed.
 const EXPECTED: [EscrowState, EscrowState][] = [
   ['DRAFT', 'PROPOSED'], ['DRAFT', 'CANCELLED'],
-  ['PROPOSED', 'DRAFT'], ['PROPOSED', 'AGREED'], ['PROPOSED', 'CANCELLED'],
+  ['PROPOSED', 'DRAFT'], ['PROPOSED', 'OPEN'], ['PROPOSED', 'AGREED'], ['PROPOSED', 'CANCELLED'],
+  ['OPEN', 'DRAFT'], ['OPEN', 'AGREED'], ['OPEN', 'CANCELLED'],
   ['AGREED', 'AWAITING_FUNDS'], ['AGREED', 'CANCELLED'],
-  ['AWAITING_FUNDS', 'FUNDED'], ['AWAITING_FUNDS', 'CANCELLED'],
+  ['AWAITING_FUNDS', 'FUNDED'], ['AWAITING_FUNDS', 'OPEN'], ['AWAITING_FUNDS', 'CANCELLED'],
   ['FUNDED', 'DELIVERED'], ['FUNDED', 'REFUNDING'],
   ['DELIVERED', 'VERIFYING'],
   ['VERIFYING', 'FUNDED'], ['VERIFYING', 'AWAITING_APPROVAL'], ['VERIFYING', 'RELEASING'], ['VERIFYING', 'REFUNDING'],
@@ -38,6 +39,11 @@ describe('transition table', () => {
     // No way back to editable terms once money is involved.
     for (const s of ['AWAITING_FUNDS', 'FUNDED', 'VERIFYING', 'AWAITING_APPROVAL'] as EscrowState[]) {
       expect(canTransition(s, 'DRAFT') || canTransition(s, 'PROPOSED')).toBe(false);
+    }
+    // Back on the marketplace only while no money is held; never once funded.
+    expect(EXPECTED.filter(([, to]) => to === 'OPEN').map(([from]) => from).sort()).toEqual(['AWAITING_FUNDS', 'PROPOSED']);
+    for (const s of ['FUNDED', 'DELIVERED', 'VERIFYING', 'AWAITING_APPROVAL', 'RELEASING', 'REFUNDING'] as EscrowState[]) {
+      expect(canTransition(s, 'OPEN')).toBe(false);
     }
   });
 

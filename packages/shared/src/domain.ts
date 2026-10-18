@@ -12,8 +12,13 @@ export type Role = z.infer<typeof RoleSchema>;
 export const PartyRoleSchema = z.enum(['client', 'freelancer']);
 export type PartyRole = z.infer<typeof PartyRoleSchema>;
 
+/**
+ * `OPEN` (marketplace): the client approved the requirements (= accepted the termsHash) and the listing
+ * waits for a freelancer. Exits: a freelancer takes it (AGREED), the client edits it (DRAFT) or cancels,
+ * or the deadline passes with nobody (CANCELLED).
+ */
 export const EscrowStateSchema = z.enum([
-  'DRAFT', 'PROPOSED', 'AGREED', 'AWAITING_FUNDS', 'FUNDED',
+  'DRAFT', 'PROPOSED', 'OPEN', 'AGREED', 'AWAITING_FUNDS', 'FUNDED',
   'DELIVERED', 'VERIFYING', 'AWAITING_APPROVAL', 'RELEASING', 'RELEASED',
   'REFUNDING', 'REFUNDED', 'CANCELLED',
 ]);
@@ -137,11 +142,35 @@ export const DeliverySchema = z.object({
 });
 export type Delivery = z.infer<typeof DeliverySchema>;
 
+export const OfferStatusSchema = z.enum(['pending', 'accepted', 'declined', 'expired', 'withdrawn']);
+export type OfferStatus = z.infer<typeof OfferStatusSchema>;
+
+/**
+ * A freelancer's counteroffer on an OPEN listing: the same job for a lower reward. Making it counts as
+ * that freelancer accepting `termsHash` = the listing's terms with `amount` and its recalculated `fee`;
+ * the client accepting it agrees to the same hash. Pending offers expire at `expiresAt` (never after the
+ * job's deadline) and are declined when the listing is taken, edited or closed.
+ */
+export const OfferSchema = z.object({
+  id: z.string(),                   // "o1", "o2", ... per escrow
+  amount: AmountSchema,             // the reward the freelancer asks for, lower than the listing's
+  fee: AmountSchema,                // serviceFee(amount)
+  termsHash: Sha256HexSchema,       // the listing's terms with this amount and fee
+  note: z.string().max(500).optional(),
+  at: IsoDateSchema,
+  expiresAt: IsoDateSchema,
+  status: OfferStatusSchema,
+  closedAt: IsoDateSchema.optional(),
+});
+export type Offer = z.infer<typeof OfferSchema>;
+
 export const EscrowSchema = z.object({
   id: z.string(),                 // short id, e.g. "esc_7f3a"
   title: z.string(),
   rawText: z.string(),            // the original plain-language agreement
-  amount: AmountSchema,           // base units
+  amount: AmountSchema,           // base units; the freelancer's reward
+  /** Service fee in base units (serviceFee(amount)); part of the terms. The client escrows amount + fee. Absent = 0. */
+  fee: AmountSchema.optional(),
   assetId: z.string(),            // RGB asset id (never a ticker)
   assetTicker: z.string(),        // display only
   precision: z.number().int().nonnegative(), // display only
@@ -155,6 +184,10 @@ export const EscrowSchema = z.object({
   fundingInvoice: z.string().optional(), // agent's receive invoice
   refundInvoice: z.string().optional(),  // client's receive invoice
   payoutInvoice: z.string().optional(),  // freelancer's receive invoice (latest delivery)
+  /** Set when a freelancer takes an OPEN listing: unfunded by then, the listing reopens (FUNDING_WINDOW_SEC). */
+  fundingDueAt: IsoDateSchema.optional(),
+  /** Counteroffers made on the listing, newest last (marketplace). Public: everyone sees the bids. */
+  offers: z.array(OfferSchema).optional(),
   deliveries: z.array(DeliverySchema),
   createdAt: IsoDateSchema,
   updatedAt: IsoDateSchema,
@@ -166,6 +199,9 @@ export const DecisionSchema = z.discriminatedUnion('action', [
   z.object({ action: z.literal('retry'), reason: z.string(), failed: z.array(z.string()) }),
   z.object({ action: z.literal('refund'), reason: z.string() }),
   z.object({ action: z.literal('await_approval'), reason: z.string(), pending: z.array(z.string()) }), // client_review ids
+  // Exits that move no money (marketplace timeouts):
+  z.object({ action: z.literal('cancel'), reason: z.string() }), // OPEN listing past its deadline
+  z.object({ action: z.literal('reopen'), reason: z.string() }), // AWAITING_FUNDS not funded in time
   z.object({ action: z.literal('wait'), reason: z.string() }),
 ]);
 export type Decision = z.infer<typeof DecisionSchema>;

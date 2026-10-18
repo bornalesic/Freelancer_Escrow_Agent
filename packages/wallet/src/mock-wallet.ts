@@ -174,7 +174,7 @@ export class MockWallet implements EscrowWallet {
     return withLedger(this.#ledger, (ledger) => [this.#balanceFrom(ledger, ledger.asset.assetId)])
   }
 
-  async createInvoice(p: { assetId: string; amount: string }): Promise<{
+  async createInvoice(p: { assetId: string; amount: string; expiresInSec?: number }): Promise<{
     invoice: string
     recipientId: string
     expiresAt: string
@@ -182,7 +182,8 @@ export class MockWallet implements EscrowWallet {
     assertBaseUnits(p.amount, 'invoice amount')
     const recipientId = `mockrcpt_${randomBytes(6).toString('hex')}`
     const now = Date.now()
-    const expiresAt = new Date(now + INVOICE_TTL_MS).toISOString()
+    const ttlMs = p.expiresInSec === undefined ? INVOICE_TTL_MS : p.expiresInSec * 1000
+    const expiresAt = new Date(now + ttlMs).toISOString()
 
     await withLedger(this.#ledger, (ledger) => {
       ledger.invoices[recipientId] = {

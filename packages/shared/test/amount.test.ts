@@ -1,6 +1,28 @@
 import { describe, expect, it } from 'vitest';
-import { formatAmount, toBaseUnits } from '../src/amount.ts';
+import { escrowTotal, formatAmount, serviceFee, toBaseUnits } from '../src/amount.ts';
 import { eventId, newEscrowId } from '../src/ids.ts';
+
+describe('serviceFee (2%, rounded up to a base unit, at least 1)', () => {
+  it.each([
+    ['50000000', '1000000'], // 50 tUSDT -> 1 tUSDT
+    ['101', '3'],            // 2.02 -> 3: rounded up
+    ['100', '2'],            // exact
+    ['1', '1'],              // 0.02 -> 1
+    ['0', '1'],              // the minimum
+  ])('reward %s -> fee %s', (reward, fee) => {
+    expect(serviceFee(reward)).toBe(fee);
+  });
+  it('is bigint-safe', () => {
+    expect(serviceFee('900000000000000000000')).toBe('18000000000000000000');
+  });
+});
+
+describe('escrowTotal', () => {
+  it('is reward + fee, and a missing fee counts 0', () => {
+    expect(escrowTotal({ amount: '50000000', fee: '1000000' })).toBe('51000000');
+    expect(escrowTotal({ amount: '50000000' })).toBe('50000000');
+  });
+});
 
 describe('toBaseUnits', () => {
   it.each([

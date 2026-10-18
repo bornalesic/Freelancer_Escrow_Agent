@@ -162,3 +162,58 @@ describe('decide with client review', () => {
     }
   });
 });
+
+describe('decide on the marketplace (timeouts that move no money)', () => {
+  // Funding window ends well before the job's deadline, as with FUNDING_WINDOW_SEC = 600.
+  const DUE = '2026-10-18T11:10:00.000Z';
+  const BEFORE_WINDOW = new Date('2026-10-18T11:09:59.999Z');
+  const AT_WINDOW = new Date(DUE);
+  const AFTER_WINDOW = new Date('2026-10-18T11:30:00.000Z');
+  type Funding = 'none' | 'seen' | 'failed' | undefined;
+  const funding = (f: Funding, now: Date, window: 'marketplace' | 'both-parties' = 'marketplace') =>
+    decide({
+      state: 'AWAITING_FUNDS',
+      deadline: DEADLINE,
+      conditions,
+      ...(window === 'marketplace' ? { fundingDueAt: DUE } : {}),
+      ...(f ? { funding: f } : {}),
+    }, [], now).action;
+
+  it.each([
+    ['before the deadline', BEFORE, 'wait'],
+    ['exactly at the deadline', AT, 'cancel'],
+    ['after the deadline', AFTER, 'cancel'],
+  ] as const)('OPEN listing %s → %s', (_name, now, action) => {
+    expect(decide({ state: 'OPEN', deadline: DEADLINE, conditions }, ALL_PASS, now).action).toBe(action);
+  });
+
+  it.each([
+    // [funding seen by the agent's wallet, now, expected]
+    ['none', BEFORE_WINDOW, 'wait'],
+    ['none', AT_WINDOW, 'reopen'],
+    ['none', AFTER_WINDOW, 'reopen'],
+    [undefined, AT_WINDOW, 'reopen'],   // nothing reported counts as nothing seen
+    ['none', AFTER, 'cancel'],          // the deadline beats the window: nobody can take it any more
+    ['failed', BEFORE_WINDOW, 'reopen'],
+    ['failed', AFTER, 'reopen'],
+    ['seen', AT_WINDOW, 'wait'],        // money on its way is never abandoned...
+    ['seen', AFTER, 'wait'],            // ...not even after the deadline
+  ] as const)('AWAITING_FUNDS, payment %s, at %s → %s', (f, now, action) => {
+    expect(funding(f, now)).toBe(action);
+  });
+
+  it('leaves the both-parties flow alone: without a funding window AWAITING_FUNDS just waits', () => {
+    for (const f of ['none', 'failed', 'seen', undefined] as Funding[]) {
+      expect(funding(f, AFTER, 'both-parties')).toBe('wait');
+    }
+  });
+
+  it('never moves money from a marketplace waiting state', () => {
+    for (const now of [BEFORE_WINDOW, AT_WINDOW, AFTER_WINDOW, AFTER]) {
+      for (const f of ['none', 'failed', 'seen', undefined] as Funding[]) {
+        expect(['release', 'refund']).not.toContain(funding(f, now));
+      }
+      expect(['release', 'refund']).not.toContain(decide({ state: 'OPEN', deadline: DEADLINE, conditions }, ALL_PASS, now).action);
+    }
+  });
+});

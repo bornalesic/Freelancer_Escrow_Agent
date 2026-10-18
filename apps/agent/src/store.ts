@@ -16,6 +16,14 @@ export interface EscrowInternal {
   payout?: { kind: 'release' | 'refund'; status: 'sending' | 'sent' | 'failed'; invoice: string; txid?: string };
   /** sha256 of the clientToken returned by POST /escrows. The token itself is never stored. */
   clientTokenHash?: string;
+  /** sha256 of the freelancerToken returned by POST /escrows/:id/take; cleared when the listing reopens. */
+  freelancerTokenHash?: string;
+  /** offerId → sha256 of the offerToken from POST /escrows/:id/offers. An accepted one becomes freelancerTokenHash. */
+  offerTokenHashes?: Record<string, string>;
+  /** Published to the marketplace at least once: from then on every party action needs its token. */
+  marketplace?: boolean;
+  /** The funding payment failed (AWAITING_FUNDS): decide() reopens the listing. */
+  fundingFailed?: boolean;
   /** `${state}:${title}` of the last error event, so a retried step doesn't spam the log. */
   lastError?: string;
 }

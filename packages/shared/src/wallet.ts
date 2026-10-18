@@ -40,7 +40,8 @@ export interface EscrowWallet {
   info(): Promise<WalletInfo>;
   balance(assetId: string): Promise<AssetBalance>;
   listAssets(): Promise<AssetBalance[]>;
-  createInvoice(p: { assetId: string; amount: string }): Promise<{ invoice: string; recipientId: string; expiresAt?: string }>;
+  /** `expiresInSec`: how long the invoice stays payable (each implementation has a default). */
+  createInvoice(p: { assetId: string; amount: string; expiresInSec?: number }): Promise<{ invoice: string; recipientId: string; expiresAt?: string }>;
   pay(p: { invoice: string; assetId: string; amount: string }): Promise<{ txid: string }>;
   refresh(): Promise<void>;
   transfers(assetId: string): Promise<TransferSummary[]>;

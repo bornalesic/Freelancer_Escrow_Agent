@@ -12,9 +12,11 @@ All JSON amounts are integer base units as **decimal strings**. All timestamps a
 export type Role = 'client' | 'freelancer' | 'agent';
 
 export type EscrowState =
-  | 'DRAFT' | 'PROPOSED' | 'AGREED' | 'AWAITING_FUNDS' | 'FUNDED'
+  | 'DRAFT' | 'PROPOSED' | 'OPEN' | 'AGREED' | 'AWAITING_FUNDS' | 'FUNDED'
   | 'DELIVERED' | 'VERIFYING' | 'AWAITING_APPROVAL' | 'RELEASING' | 'RELEASED'
   | 'REFUNDING' | 'REFUNDED' | 'CANCELLED';
+// OPEN (marketplace): the client approved the requirements (= accepted the termsHash); the listing waits
+// for a freelancer. Exits: taken → AGREED, edited → DRAFT, cancelled or past its deadline → CANCELLED.
 
 /**
  * An acceptance condition. Discriminated on `kind`. The verifier checks `tests_pass`, `file_hash`,
@@ -68,7 +70,8 @@ export interface Escrow {
   id: string;                    // short id, e.g. "esc_7f3a"
   title: string;
   rawText: string;               // the original plain-language agreement
-  amount: string;                // base units
+  amount: string;                // base units; the freelancer's reward
+  fee?: string;                  // service fee, serviceFee(amount); part of the terms; absent = 0
   assetId: string;               // RGB asset id (never a ticker)
   assetTicker: string;           // display only, e.g. "tUSDT"
   precision: number;             // display only, e.g. 6
@@ -82,9 +85,27 @@ export interface Escrow {
   fundingInvoice?: string;       // agent's receive invoice
   refundInvoice?: string;        // client's receive invoice
   payoutInvoice?: string;        // freelancer's receive invoice (latest delivery)
+  fundingDueAt?: string;         // set when a freelancer takes the listing: now + FUNDING_WINDOW_SEC
+  offers?: Offer[];              // counteroffers on the listing, newest last (public)
   deliveries: Delivery[];
   createdAt: string;
   updatedAt: string;
+}
+
+// A freelancer's counteroffer on an OPEN listing: the same job for a lower reward. Making it = that
+// freelancer accepting `termsHash` (the listing's terms with this amount and fee). The client accepting it
+// agrees to the same hash → AGREED. Pending until expiresAt = min(now + OFFER_WINDOW_SEC, deadline);
+// declined when the listing is taken, edited or closed.
+export interface Offer {
+  id: string;                    // "o1", "o2", ... per escrow
+  amount: string;                // lower than the listing's amount
+  fee: string;                   // serviceFee(amount)
+  termsHash: string;
+  note?: string;                 // ≤ 500 chars
+  at: string;
+  expiresAt: string;
+  status: 'pending' | 'accepted' | 'declined' | 'expired' | 'withdrawn';
+  closedAt?: string;
 }
 
 export interface Delivery {
@@ -137,11 +158,18 @@ export type Decision =
   | { action: 'retry'; reason: string; failed: string[] }
   | { action: 'refund'; reason: string }
   | { action: 'await_approval'; reason: string; pending: string[] } // client_review condition ids
+  | { action: 'cancel'; reason: string }   // OPEN listing past its deadline (no money moves)
+  | { action: 'reopen'; reason: string }   // AWAITING_FUNDS not funded by fundingDueAt (no money moves)
   | { action: 'wait'; reason: string };
 ```
 
-The client's `clientToken` (§4) is never part of `Escrow`: escrows are broadcast to every WebSocket
-client, including the freelancer.
+The client's `clientToken` and the freelancer's `freelancerToken` (§4) are never part of `Escrow`:
+escrows are broadcast to every WebSocket client.
+
+**Fees** (`packages/shared/src/amount.ts`): `serviceFee(reward)` = 2 % (`SERVICE_FEE_PERCENT`) rounded up to a
+whole base unit, at least 1. `escrowTotal(e)` = `amount + fee`. The client escrows the total; release pays the
+freelancer `amount` (the service keeps `fee`); refund returns the total. `termsHash` covers
+`{ title, amount, fee, assetId, deadline, conditions }`; an absent `fee` is left out, so older terms keep their hash.
 
 ## 2. Decision log (`packages/shared/src/events.ts`)
 
@@ -150,7 +178,10 @@ export type Actor = 'client' | 'freelancer' | 'agent' | 'ai' | 'verifier' | 'wal
 
 export type LogEventType =
   | 'escrow.created' | 'terms.proposed' | 'terms.reparse_requested' | 'terms.accepted' | 'terms.agreed'
+  | 'listing.published'                                    // PROPOSED → OPEN
+  | 'offer.made' | 'offer.withdrawn' | 'offer.declined' | 'offer.expired' // counteroffers (accepted = terms.agreed)
   | 'funding.invoice_created' | 'funding.payment_seen' | 'funding.settled'
+  | 'funding.reopened'                                     // AWAITING_FUNDS → OPEN (window over / payment failed)
   | 'delivery.received' | 'verify.started' | 'verify.condition_result' | 'verify.finished'
   | 'decision.made'
   | 'review.report_ready' | 'review.approved' | 'review.disputed' | 'review.expired'
@@ -218,7 +249,7 @@ export interface EscrowWallet {
   info(): Promise<WalletInfo>;
   balance(assetId: string): Promise<AssetBalance>;
   listAssets(): Promise<AssetBalance[]>;
-  createInvoice(p: { assetId: string; amount: string }): Promise<{ invoice: string; recipientId: string; expiresAt?: string }>;
+  createInvoice(p: { assetId: string; amount: string; expiresInSec?: number }): Promise<{ invoice: string; recipientId: string; expiresAt?: string }>;
   pay(p: { invoice: string; assetId: string; amount: string }): Promise<{ txid: string }>;
   refresh(): Promise<void>;
   transfers(assetId: string): Promise<TransferSummary[]>;
@@ -239,18 +270,23 @@ Selected by `WALLET_MODE=real|mock`.
 | ------ | ---- | ---- | ------- |
 | GET  | `/health` | – | `{ ok, walletMode, aiUp, aiModel?, network, error? }` (`aiModel` from apps/ai `/health` while it is up; `ok:false` + `error` while the agent wallet is not ready) |
 | GET  | `/config` | – | `{ assetId, assetTicker, precision, network }` |
-| GET  | `/wallet` | – | `WalletInfo & { assets: AssetBalance[] }` (agent wallet; same shape as party `/wallet`) |
-| POST | `/escrows` | `{ title, rawText, amount, deadline }` | `201 Escrow & { clientToken }` (state `DRAFT`, parse starts async; the only response that carries `clientToken`) |
-| GET  | `/escrows` | – | `Escrow[]` |
+| GET  | `/wallet` | – | `WalletInfo & { assets: AssetBalance[] }` (the agent's **own** wallet only; it never reads a party wallet) |
+| POST | `/escrows` | `{ title, rawText, amount, deadline }` | `201 Escrow & { clientToken }` (state `DRAFT`, `fee` = `serviceFee(amount)`, parse starts async; the only response that carries `clientToken`) |
+| GET  | `/escrows` | – | `Escrow[]` (the marketplace lists the `OPEN` ones) |
 | GET  | `/escrows/:id` | – | `{ escrow, events }` |
-| POST | `/escrows/:id/reparse` | `{ rawText? }` | `Escrow` |
-| POST | `/escrows/:id/accept` | `{ role, termsHash, signature?, address? }` | `Escrow` |
-| POST | `/escrows/:id/cancel` | `{ role }` | `Escrow` |
-| POST | `/escrows/:id/refund-invoice` | `{ invoice }` | `Escrow` (client provides) |
+| POST | `/escrows/:id/reparse` | `{ rawText?, clientToken? }` | `Escrow` (also from `OPEN`: edits unlist it and void acceptances; marketplace escrows need `clientToken`) |
+| POST | `/escrows/:id/accept` | `{ role, termsHash, signature?, address? }` | `Escrow` (both-parties flow without a listing) |
+| POST | `/escrows/:id/publish` | `{ termsHash, clientToken }` | `Escrow` (`PROPOSED → OPEN`; counts as the client's acceptance; `403` wrong token, `409` stale `termsHash` or no automatic check) |
+| POST | `/escrows/:id/take` | `{ termsHash }` | `Escrow & { freelancerToken }` (`OPEN → AGREED → AWAITING_FUNDS`; first taker wins, `409` after) |
+| POST | `/escrows/:id/offers` | `{ termsHash, amount, note? }` | `{ escrow, offerId, offerToken }` (counteroffer on an `OPEN` listing; `amount` must be lower than the listing's; `409` stale `termsHash`, not `OPEN`, past the deadline, or 20 pending offers) |
+| POST | `/escrows/:id/offers/:offerId/accept` | `{ termsHash, clientToken }` | `Escrow` (`termsHash` = the offer's; `OPEN → AGREED` at the offer's amount and fee; every other pending offer is declined; `403` wrong token, `409` offer not pending/expired) |
+| POST | `/escrows/:id/offers/:offerId/withdraw` | `{ offerToken }` | `Escrow` (`403` wrong token, `409` not pending) |
+| POST | `/escrows/:id/cancel` | `{ role, token? }` | `Escrow` (before funding; marketplace escrows need the role's token) |
+| POST | `/escrows/:id/refund-invoice` | `{ invoice, clientToken? }` | `Escrow` (client provides; marketplace escrows need `clientToken`) |
 | POST | `/escrows/:id/funded` | `{ txid }` | `Escrow` (client hint; agent still verifies) |
-| POST | `/escrows/:id/deliveries` | multipart: `file`, `payoutInvoice` | `Escrow` (max 20 MB, only in `FUNDED` before the deadline) |
-| GET  | `/escrows/:id/deliveries/:n/files` | – | `{ path, sizeBytes }[]` (the unpacked delivery) |
-| GET  | `/escrows/:id/deliveries/:n/files/*` | – | the raw file, sent with `Content-Security-Policy: sandbox` |
+| POST | `/escrows/:id/deliveries` | multipart: `file`, `payoutInvoice`, `freelancerToken?` | `Escrow` (max 20 MB, only in `FUNDED` before the deadline; `freelancerToken` required once the listing was taken) |
+| GET  | `/escrows/:id/deliveries/:n/files` | – (header `x-escrow-token`) | `{ path, sizeBytes, previewable }[]` (the unpacked delivery) |
+| GET  | `/escrows/:id/deliveries/:n/files/*` | – (header `x-escrow-token`) | the raw file, sent with `Content-Security-Policy: sandbox`. Before `RELEASED`: images only, to the client (its token) or the agent's own laptop; `403` otherwise. After: any file, to the client, the freelancer or the agent's laptop |
 | POST | `/escrows/:id/approve` | `{ deliveryN, decision: 'approve' \| 'dispute', reason?, clientToken }` | `Escrow`; `403` wrong token, `409` not `AWAITING_APPROVAL` or not the latest delivery, `400` dispute without `reason` |
 | POST | `/escrows/:id/dry-run` | multipart: `file` | `DryRunResponse` (verifier on a practice upload + QVAC fix hints; no state change); `409` unless `FUNDED`, after the deadline, or while one runs |
 | POST | `/assist/:name` | the assist's request (`ASSIST_SCHEMAS`) | its result; `404` unknown/not proxied name, `400` invalid body, `503` AI unreachable or invalid answer |
@@ -263,6 +299,24 @@ Selected by `WALLET_MODE=real|mock`.
 `POST /escrows`. The client UI keeps it; the agent stores only its sha256 and compares in constant time.
 It never appears in `Escrow`, `LogEvent.data`, WebSocket messages or logs. Other routes still trust the
 `role` in the body (LAN demo), but `/approve` releases money, so it needs proof that the caller is the client.
+
+**`freelancerToken`.** The same for the freelancer: created by `POST /escrows/:id/take`, returned once, only
+its sha256 stored. **Marketplace escrows** (published at least once) use the tokens everywhere: `reparse`,
+`cancel`, `refund-invoice` and the file routes need the right one, and `deliveries` needs the
+`freelancerToken`. Where a body can't carry it (file previews), it goes in the `x-escrow-token` header,
+never in the URL: request URLs are logged.
+
+**Marketplace timeouts** (5 s ticker, decided by `decide()`): `OPEN` past the deadline → `CANCELLED`;
+`AWAITING_FUNDS` past `fundingDueAt` with no payment seen → `OPEN` (`funding.reopened`), as is a failed
+funding payment. The funding invoice expires at `fundingDueAt`. A pending offer past its `expiresAt` →
+`expired` (`offer.expired`).
+
+**Counteroffers.** `POST /offers` returns a one-time `offerToken` (only its sha256 is stored): it withdraws
+the offer, and if the client accepts the offer it becomes the freelancer's `freelancerToken` for the job.
+Accepting sets `amount`, `fee` and `termsHash` to the offer's; the client and that freelancer have then
+accepted the same hash (the freelancer's acceptance carries the offer's `at`). Every other pending offer is
+declined (`offer.declined`), as are all pending offers when the listing is taken, edited or closed. A
+listing that reopens after an accepted offer stays at the agreed terms.
 
 ### AI service `apps/ai` — `http://<ai-host>:4300`
 
@@ -316,12 +370,23 @@ export interface ReviewRequest {
 | Method | Path | Body | Returns |
 | ------ | ---- | ---- | ------- |
 | GET  | `/health` | – | `{ ok, role, walletMode }` |
-| GET  | `/wallet` | – | `WalletInfo & { assets: AssetBalance[] }` |
-| POST | `/wallet/invoice` | `{ assetId, amount }` | `{ invoice, recipientId, expiresAt? }` |
-| POST | `/wallet/pay` | `{ invoice, assetId, amount }` | `{ txid }` |
+| GET  | `/wallet` | – | `WalletInfo & { assets: AssetBalance[] }` — **own laptop only** (`403` from anywhere else) |
+| POST | `/wallet/invoice` | `{ assetId, amount, expiresInSec? }` | `{ invoice, recipientId, expiresAt? }` |
+| POST | `/wallet/pay` | `{ invoice, assetId, amount }` | `{ txid }` — own laptop only |
 | POST | `/wallet/refresh` | – | `{ ok }` |
-| GET  | `/wallet/transfers?assetId=` | – | `TransferSummary[]` |
-| POST | `/wallet/sign` | `{ message }` | `{ signature, address }` |
+| GET  | `/wallet/transfers?assetId=` | – | `TransferSummary[]` — own laptop only |
+| POST | `/wallet/sign` | `{ message }` | `{ signature, address }` — own laptop only |
+| POST | `/autopay` | `{ escrowId, clientToken }` | `AutopayStatus` — client role, own laptop only: pre-authorises reward + fee for one listing |
+| GET  | `/autopay` | – | `AutopayStatus[]` — own laptop only |
+
+**Balances are private.** A party's balance, transfers and spending routes answer only requests from its
+own laptop (loopback), so the agent and other users can never read them. Only `/health`, `/wallet/invoice`
+and `/wallet/refresh` answer from the LAN.
+
+**Auto-pay.** When the client approves a listing, its UI calls `POST /autopay`. When a freelancer takes the
+job, the client's party server attaches a refund invoice valid until a day after the deadline
+(`refund-invoice` with `clientToken`) and pays exactly `escrowTotal()` to the funding invoice — at most the
+authorised total (an accepted counteroffer costs less), never more, never twice for one invoice.
 
 All three servers send permissive CORS headers (LAN demo) and log every request on one line.
 Errors: `400 { error, details }` (zod issues) for bad bodies, `404` unknown escrow, `409 { error, details? }`
@@ -337,3 +402,7 @@ See `.env.example` at the repo root. Every process reads only the variables list
 Client review adds two agent variables (add them to `.env.example` when building):
 `REVIEW_WINDOW_SEC` (how long the client has to approve or dispute before the agent releases; ~120 for
 the demo) and `AI_REVIEW_TIMEOUT_MS` (agent → `apps/ai` `/review`, e.g. 30000).
+
+The marketplace adds `FUNDING_WINDOW_SEC` (agent; default 600): how long a taken listing waits for the
+client's payment before it reopens, and `OFFER_WINDOW_SEC` (agent; default 900): how long a counteroffer
+waits for the client before it expires (never past the job's deadline).

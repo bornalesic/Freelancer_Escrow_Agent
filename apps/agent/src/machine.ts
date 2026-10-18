@@ -13,9 +13,10 @@ import { conflict, nowIso } from './util';
 /** Allowed transitions, as in docs/ESCROW_FLOW.md. PROPOSED → DRAFT is a re-parse. */
 export const TRANSITIONS: Record<EscrowState, readonly EscrowState[]> = {
   DRAFT: ['PROPOSED', 'CANCELLED'],
-  PROPOSED: ['DRAFT', 'AGREED', 'CANCELLED'],
+  PROPOSED: ['DRAFT', 'OPEN', 'AGREED', 'CANCELLED'], // OPEN = published listing; AGREED = both-parties flow
+  OPEN: ['DRAFT', 'AGREED', 'CANCELLED'],             // edited, taken, cancelled or expired
   AGREED: ['AWAITING_FUNDS', 'CANCELLED'],
-  AWAITING_FUNDS: ['FUNDED', 'CANCELLED'],
+  AWAITING_FUNDS: ['FUNDED', 'OPEN', 'CANCELLED'],    // OPEN: not funded in time / payment failed
   FUNDED: ['DELIVERED', 'REFUNDING'],
   DELIVERED: ['VERIFYING'],
   VERIFYING: ['FUNDED', 'AWAITING_APPROVAL', 'RELEASING', 'REFUNDING'],

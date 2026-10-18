@@ -13,18 +13,45 @@ import { isAutomaticCondition, type Decision, type Escrow, type VerificationResu
  *     approved → release; disputed before the deadline → retry; disputed after → refund;
  *     no answer and the review window is over → release; otherwise → wait.
  *   The deadline alone never refunds here: that work passed every automatic check in time.
+ * - OPEN (marketplace listing) and the deadline passed        → cancel (nobody took it; no money moved)
+ * - AWAITING_FUNDS with a funding window (marketplace), nothing on its way:
+ *     the payment failed or the window is over → reopen (back to OPEN for another freelancer);
+ *     the deadline passed                      → cancel. A payment already seen is never abandoned → wait.
  * - anything else                                             → wait
  *
  * A condition without a result counts as failed. An escrow with no conditions can never be released.
  * Never reads `delivery.review`: the AI's opinion is for people only.
  */
 export function decide(
-  escrow: Pick<Escrow, 'state' | 'deadline' | 'conditions'> & { deliveries?: Escrow['deliveries'] },
+  escrow: Pick<Escrow, 'state' | 'deadline' | 'conditions'> & {
+    deliveries?: Escrow['deliveries'];
+    fundingDueAt?: string | undefined;
+    /** What the agent's wallet has seen of the funding payment (AWAITING_FUNDS only). */
+    funding?: 'none' | 'seen' | 'failed';
+  },
   results: readonly VerificationResult[],
   now: Date,
 ): Decision {
   const deadlinePassed = now.getTime() >= Date.parse(escrow.deadline);
   const reviewIds = escrow.conditions.filter((c) => !isAutomaticCondition(c)).map((c) => c.id);
+
+  if (escrow.state === 'OPEN') {
+    return deadlinePassed
+      ? { action: 'cancel', reason: 'Nobody took the job before its deadline, so the listing closes. No money moved.' }
+      : { action: 'wait', reason: 'Waiting for a freelancer to take the job.' };
+  }
+
+  if (escrow.state === 'AWAITING_FUNDS' && escrow.fundingDueAt) {
+    if (escrow.funding === 'failed') {
+      return { action: 'reopen', reason: "The client's payment failed, so the job goes back on the marketplace." };
+    }
+    if (escrow.funding === 'seen') return { action: 'wait', reason: "The client's payment is on its way." };
+    if (deadlinePassed) return { action: 'cancel', reason: 'The job was not funded before its deadline. No money moved.' };
+    if (now.getTime() >= Date.parse(escrow.fundingDueAt)) {
+      return { action: 'reopen', reason: 'The job was not funded in time, so it goes back on the marketplace.' };
+    }
+    return { action: 'wait', reason: "Waiting for the client's payment." };
+  }
 
   if (escrow.state === 'FUNDED') {
     return deadlinePassed

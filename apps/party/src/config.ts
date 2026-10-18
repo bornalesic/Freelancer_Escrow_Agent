@@ -17,6 +17,10 @@ export interface Config {
   walletMode: WalletMode
   /** How often the background loop refreshes while a transfer is in flight (WALLET_POLL_MS). */
   pollMs: number
+  /** The escrow agent (AGENT_URL): auto-pay reads the client's jobs there and attaches refund invoices. */
+  agentUrl: string
+  /** This role's own state (auto-pay authorisations): apps/party/data/<role>. */
+  dataDir: string
 }
 
 function str(env: NodeJS.ProcessEnv, name: string): string | undefined {
@@ -46,5 +50,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     port: positiveInt(env, 'PARTY_PORT', DEFAULT_PORT[role.data]),
     walletMode: mode.data,
     pollMs: positiveInt(env, 'WALLET_POLL_MS', DEFAULT_POLL_MS),
+    agentUrl: (str(env, 'AGENT_URL') ?? 'http://localhost:4000').replace(/\/$/, ''),
+    dataDir: resolve(REPO_ROOT, 'apps/party/data', role.data),
   }
 }

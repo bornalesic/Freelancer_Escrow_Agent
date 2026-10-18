@@ -189,6 +189,29 @@ describe('pay between two instances sharing a ledger file', () => {
   })
 })
 
+describe('invoice lifetime', () => {
+  it('defaults to an hour and honours expiresInSec', async () => {
+    const freelancer = wallet('freelancer')
+    await freelancer.init()
+    const hour = await freelancer.createInvoice({ assetId: ASSET, amount: '1' })
+    const day = await freelancer.createInvoice({ assetId: ASSET, amount: '1', expiresInSec: 24 * 3600 })
+    const left = (iso: string) => Date.parse(iso) - Date.now()
+    expect(left(hour.expiresAt)).toBeGreaterThan(59 * 60_000)
+    expect(left(hour.expiresAt)).toBeLessThanOrEqual(60 * 60_000)
+    expect(left(day.expiresAt)).toBeGreaterThan(23 * 3600_000)
+  })
+
+  it('refuses to pay an invoice that has expired', async () => {
+    const client = wallet('client')
+    const freelancer = wallet('freelancer')
+    await client.init()
+    await freelancer.init()
+    const { invoice } = await freelancer.createInvoice({ assetId: ASSET, amount: '1', expiresInSec: 1 })
+    await new Promise((r) => setTimeout(r, 1_100))
+    await expect(client.pay({ invoice, assetId: ASSET, amount: '1' })).rejects.toThrow(/expired/)
+  })
+})
+
 describe('rejections', () => {
   it('refuses to pay the same invoice twice', async () => {
     const client = wallet('client')

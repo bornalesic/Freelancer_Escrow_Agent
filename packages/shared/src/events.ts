@@ -6,7 +6,11 @@ export type Actor = z.infer<typeof ActorSchema>;
 
 export const LOG_EVENT_TYPES = [
   'escrow.created', 'terms.proposed', 'terms.reparse_requested', 'terms.accepted', 'terms.agreed',
+  'listing.published', // PROPOSED → OPEN: the client approved the requirements; the job is on the marketplace
+  // Counteroffers on an OPEN listing (no state change). An accepted one is `terms.agreed` (OPEN → AGREED).
+  'offer.made', 'offer.withdrawn', 'offer.declined', 'offer.expired',
   'funding.invoice_created', 'funding.payment_seen', 'funding.settled',
+  'funding.reopened', // AWAITING_FUNDS → OPEN: not funded within the window, or the payment failed
   'delivery.received', 'verify.started', 'verify.condition_result', 'verify.finished',
   'decision.made',
   'review.report_ready', 'review.approved', 'review.disputed', 'review.expired',

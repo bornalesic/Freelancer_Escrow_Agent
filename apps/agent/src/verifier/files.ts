@@ -84,6 +84,11 @@ const TYPES: Record<string, string> = {
 };
 const TEXT = new Set(['.md', '.txt', '.ts', '.tsx', '.jsx', '.py', '.sh', '.yml', '.yaml', '.toml', '.csv', '.xml']);
 
+const IMAGES = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg']);
+
+/** Files the client may preview before release (served sandboxed; the UI shows them via a blob URL). */
+export const isPreviewImage = (file: string): boolean => IMAGES.has(path.extname(file).toLowerCase());
+
 export function contentType(file: string): string {
   const ext = path.extname(file).toLowerCase();
   return TYPES[ext] ?? (TEXT.has(ext) || !ext ? 'text/plain; charset=utf-8' : 'application/octet-stream');

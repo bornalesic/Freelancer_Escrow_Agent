@@ -19,6 +19,20 @@ export function toBaseUnits(display: string, precision: number): string {
   return BigInt(int + frac.slice(0, precision).padEnd(precision, '0')).toString();
 }
 
+/** The service's cut of every job, in percent of the reward. */
+export const SERVICE_FEE_PERCENT = 2;
+
+/** 2% of the reward in base units, rounded up to a whole base unit, and at least 1. */
+export function serviceFee(reward: string | bigint): string {
+  const fee = (BigInt(reward) * BigInt(SERVICE_FEE_PERCENT) + 99n) / 100n;
+  return (fee < 1n ? 1n : fee).toString();
+}
+
+/** What the client escrows and gets back on a refund: reward + fee. Escrows without a fee count 0. */
+export function escrowTotal(e: { amount: string; fee?: string | undefined }): string {
+  return (BigInt(e.amount) + BigInt(e.fee ?? '0')).toString();
+}
+
 /** "50500000" with precision 6 → "50.5". */
 export function formatAmount(base: string | bigint, precision: number): string {
   checkPrecision(precision);
