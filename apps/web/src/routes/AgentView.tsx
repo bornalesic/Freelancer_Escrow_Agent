@@ -12,6 +12,7 @@ import { AnimatedAmount, Countdown, ReviewCountdown, StateChip } from '../compon
 import { config } from '../config';
 import { useAgentConfig } from '../lib/agentConfig';
 import { agentApi, findBalance, partyWalletAt } from '../lib/api';
+import { HttpError } from '../lib/http';
 import { isClosed, pickEscrow } from '../lib/escrowStore';
 import { useEscrowStream, usePoll } from '../lib/hooks';
 
@@ -68,9 +69,15 @@ function ClientsCall({ escrow }: { escrow: Escrow }) {
 
 function PartyBalance({ label, url }: { label: string; url?: string }) {
   const asset = useAgentConfig();
-  const wallet = usePoll(url && !config.fixture ? () => partyWalletAt(url) : null, 3_000);
+  // Party servers answer balances only to their own laptop (403 from the LAN): show that as private.
+  const wallet = usePoll(
+    url && !config.fixture
+      ? () => partyWalletAt(url).catch((err: unknown) => (err instanceof HttpError && err.status === 403 ? null : Promise.reject(err)))
+      : null,
+    3_000,
+  );
   if (!url) return null;
-  const bal = findBalance(wallet.data, asset?.assetId);
+  const bal = findBalance(wallet.data ?? undefined, asset?.assetId);
   return (
     <div className="flex items-baseline justify-between gap-3">
       <span className="text-slate-500">{label}</span>
@@ -79,6 +86,8 @@ function PartyBalance({ label, url }: { label: string; url?: string }) {
           <>
             <AnimatedAmount value={formatAmount(bal.settled, asset.precision)} /> {asset.assetTicker}
           </>
+        ) : wallet.data === null ? (
+          <span className="font-normal text-slate-400">private</span>
         ) : wallet.error ? (
           'offline'
         ) : (

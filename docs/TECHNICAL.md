@@ -97,6 +97,9 @@ only in the UIs.
   job is taken, that server attaches the refund invoice and pays exactly `escrowTotal()`: never more, never
   twice for one invoice. State in `apps/party/data/<role>/autopay.json`; a payment interrupted by a crash is
   marked failed, never retried blindly.
+- **A payment on its way is never abandoned.** The agent records a payment it sees *before* checking the
+  funding window, and refuses a cancel while the wallet shows an incoming payment for the job's invoice. Either
+  way, a job whose money is arriving cannot reopen or close, which would make auto-pay pay a second time.
 - **No double payout.** Before `wallet.pay()` the agent writes `payout.status = 'sending'` to disk. If it
   crashes or times out mid-call, it does not pay again on its own; it logs an error and waits for a human
   to check the wallet and call `POST /escrows/:id/retry-step { "force": true }`.
@@ -161,9 +164,13 @@ with a warm-up; `/health` reports `loaded` and the model name, which the agent f
   and `/autopay` only to loopback requests whose `Origin` is `localhost`/`127.0.0.1`/`[::1]` (the loopback
   check alone is not enough, since any site open in a local browser is loopback). Only `/health`,
   `/wallet/invoice` and `/wallet/refresh` answer the LAN. The agent's `/wallet` is its own wallet only.
-- **Delivered files are sandboxed.** Served with `Content-Security-Policy: sandbox` and `nosniff`; the UI
+- **Delivered files are sandboxed.** Served with `Content-Security-Policy: sandbox` and `nosniff`; `apps/web`
   opens them in `<iframe sandbox>` without `allow-same-origin`, so a delivered web page cannot run scripts
-  against the agent. Before release the client sees image previews only; everything after `RELEASED`.
+  against the agent. `apps/market` shows files as blob URLs, which run on its own (trusted, localhost) origin,
+  so only PNG/JPEG/GIF/WebP keep their type; everything else, SVG included, becomes a download that never
+  renders. Before release the client sees image previews only; everything after `RELEASED`.
+- **Operator routes are local.** `POST /dev/reset` and `retry-step` with `force` (re-send a payment whose
+  outcome is unknown) answer only the agent's own laptop (loopback), never the venue network.
 - **Untrusted deliveries.** Nothing inside a delivery can change the outcome: checks are mechanical, and the
   AI review is advice the client reads next to the files themselves (a `landing-inject` fixture tests this).
 - **Secrets.** Mnemonics live only in each laptop's `.env.local`, never logged or committed; one wallet data
