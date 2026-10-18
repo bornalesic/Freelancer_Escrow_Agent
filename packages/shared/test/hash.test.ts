@@ -58,4 +58,11 @@ describe('termsHash', () => {
   it('is a 64-char hex string', () => {
     expect(termsHash(terms)).toMatch(/^[0-9a-f]{64}$/);
   });
+  it('covers the fee: a different fee is different terms', () => {
+    expect(termsHash({ ...terms, fee: '1000000' })).not.toBe(termsHash({ ...terms, fee: '1000001' }));
+  });
+  it('keeps the old hash for terms without a fee', () => {
+    expect(termsHash({ ...terms, fee: undefined })).toBe(termsHash(terms));
+    expect(termsHash({ ...terms, fee: '0' })).not.toBe(termsHash(terms));
+  });
 });

@@ -23,6 +23,10 @@ export interface Config {
   examples: boolean;
   /** How long the client has to approve or dispute before the agent releases. */
   reviewWindowSec: number;
+  /** How long a taken marketplace listing waits for the client's payment before it reopens. */
+  fundingWindowSec: number;
+  /** How long a counteroffer waits for the client before it expires (never past the job's deadline). */
+  offerWindowSec: number;
   network: string;
   assetId: string;
   assetTicker: string;
@@ -80,6 +84,8 @@ export function loadConfig(env: Env = process.env): Config {
     aiAssistTimeoutMs: num(env, 'AI_ASSIST_TIMEOUT_MS', 20_000),
     examples: str(env, 'AI_EXAMPLES')?.toLowerCase() !== 'off',
     reviewWindowSec: num(env, 'REVIEW_WINDOW_SEC', 120),
+    fundingWindowSec: num(env, 'FUNDING_WINDOW_SEC', 600),
+    offerWindowSec: num(env, 'OFFER_WINDOW_SEC', 900),
     network: str(env, 'RGB_NETWORK') ?? 'regtest',
     assetId,
     assetTicker: str(env, 'ESCROW_ASSET_TICKER') ?? 'TUSDT', // rgb-lib only accepts upper-case tickers

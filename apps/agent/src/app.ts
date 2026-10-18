@@ -10,17 +10,23 @@ import { ZodError, type ZodType } from 'zod';
 import {
   AGENT_ROUTES,
   ASSIST_SCHEMAS,
+  AcceptOfferRequestSchema,
   AcceptRequestSchema,
   ApproveRequestSchema,
   CancelRequestSchema,
   CreateEscrowRequestSchema,
   DeliveryFieldsSchema,
   DevMineRequestSchema,
+  ESCROW_TOKEN_HEADER,
   FundedRequestSchema,
+  MakeOfferRequestSchema,
   PROXIED_ASSISTS,
+  PublishRequestSchema,
   RefundInvoiceRequestSchema,
   ReparseRequestSchema,
   RetryStepRequestSchema,
+  TakeRequestSchema,
+  WithdrawOfferRequestSchema,
   type AgentHealthResponse,
   type ConfigResponse,
   type CreateEscrowResponse,
@@ -28,7 +34,9 @@ import {
   type DryRunResponse,
   type EscrowDetailResponse,
   type EscrowWallet,
+  type MakeOfferResponse,
   type ProxiedAssistName,
+  type TakeResponse,
   type WalletResponse,
 } from '@escrow/shared';
 import { AiClient, Explainer } from './ai-client';
@@ -43,7 +51,7 @@ import { Store } from './store';
 import { explanationTemplate } from './templates';
 import { startTicker } from './ticker';
 import { HttpError, errorMessage, notFound } from './util';
-import { contentType, deliveryRoot, listFiles, resolveDeliveryFile } from './verifier/files';
+import { contentType, deliveryRoot, isPreviewImage, listFiles, resolveDeliveryFile } from './verifier/files';
 import { WalletHolder } from './wallet';
 
 export const MAX_UPLOAD_BYTES = 20 * 1024 * 1024;
@@ -162,21 +170,47 @@ export async function buildApp(opts: AppOptions): Promise<AgentApp> {
     return { escrow, events: store.eventsOf(escrow.id) };
   });
 
-  app.post<IdParams>(AGENT_ROUTES.reparse(':id'), async (req) =>
-    orchestrator.reparse(req.params.id, parse(ReparseRequestSchema, req.body).rawText),
-  );
+  app.post<IdParams>(AGENT_ROUTES.reparse(':id'), async (req) => {
+    const body = parse(ReparseRequestSchema, req.body);
+    return orchestrator.reparse(req.params.id, body.rawText, body.clientToken);
+  });
 
   app.post<IdParams>(AGENT_ROUTES.accept(':id'), async (req) =>
     orchestrator.accept(req.params.id, parse(AcceptRequestSchema, req.body)),
   );
 
-  app.post<IdParams>(AGENT_ROUTES.cancel(':id'), async (req) =>
-    orchestrator.cancel(req.params.id, parse(CancelRequestSchema, req.body).role),
+  app.post<IdParams>(AGENT_ROUTES.publish(':id'), async (req) =>
+    orchestrator.publish(req.params.id, parse(PublishRequestSchema, req.body)),
   );
 
-  app.post<IdParams>(AGENT_ROUTES.refundInvoice(':id'), async (req) =>
-    orchestrator.setRefundInvoice(req.params.id, parse(RefundInvoiceRequestSchema, req.body).invoice),
+  app.post<IdParams>(AGENT_ROUTES.take(':id'), async (req): Promise<TakeResponse> => {
+    const { escrow, freelancerToken } = await orchestrator.take(req.params.id, parse(TakeRequestSchema, req.body));
+    return { ...escrow, freelancerToken };
+  });
+
+  type OfferParams = { Params: { id: string; offerId: string } };
+
+  app.post<IdParams>(AGENT_ROUTES.offers(':id'), async (req): Promise<MakeOfferResponse> =>
+    orchestrator.makeOffer(req.params.id, parse(MakeOfferRequestSchema, req.body)),
   );
+
+  app.post<OfferParams>(AGENT_ROUTES.acceptOffer(':id', ':offerId'), async (req) =>
+    orchestrator.acceptOffer(req.params.id, req.params.offerId, parse(AcceptOfferRequestSchema, req.body)),
+  );
+
+  app.post<OfferParams>(AGENT_ROUTES.withdrawOffer(':id', ':offerId'), async (req) =>
+    orchestrator.withdrawOffer(req.params.id, req.params.offerId, parse(WithdrawOfferRequestSchema, req.body).offerToken),
+  );
+
+  app.post<IdParams>(AGENT_ROUTES.cancel(':id'), async (req) => {
+    const body = parse(CancelRequestSchema, req.body);
+    return orchestrator.cancel(req.params.id, body.role, body.token);
+  });
+
+  app.post<IdParams>(AGENT_ROUTES.refundInvoice(':id'), async (req) => {
+    const body = parse(RefundInvoiceRequestSchema, req.body);
+    return orchestrator.setRefundInvoice(req.params.id, body.invoice, body.clientToken);
+  });
 
   app.post<IdParams>(AGENT_ROUTES.funded(':id'), async (req) =>
     orchestrator.fundedHint(req.params.id, parse(FundedRequestSchema, req.body).txid),
@@ -201,13 +235,34 @@ export async function buildApp(opts: AppOptions): Promise<AgentApp> {
 
   type FileParams = { Params: { id: string; n: string; '*': string } };
 
-  app.get<FileParams>(AGENT_ROUTES.deliveryFiles(':id', ':n'), async (req): Promise<DeliveryFilesResponse> =>
-    listFiles(filesRoot(req.params.id, req.params.n)),
-  );
+  // The projector runs on the agent's own laptop, so a loopback request is "the agent".
+  const fromAgentLaptop = (req: FastifyRequest) => ['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(req.ip);
+  const tokenOf = (req: FastifyRequest) => {
+    const value = req.headers[ESCROW_TOKEN_HEADER];
+    return typeof value === 'string' && value !== '' ? value : undefined;
+  };
+  const fileAccess = (req: FastifyRequest<FileParams>) => {
+    if (!store.has(req.params.id)) throw notFound('Escrow');
+    const access = orchestrator.fileAccess(req.params.id, tokenOf(req), fromAgentLaptop(req));
+    if (access === 'none') throw new HttpError(403, 'Only the client, the freelancer and the escrow service can see this work');
+    return access;
+  };
+
+  app.get<FileParams>(AGENT_ROUTES.deliveryFiles(':id', ':n'), async (req): Promise<DeliveryFilesResponse> => {
+    const access = fileAccess(req);
+    return listFiles(filesRoot(req.params.id, req.params.n)).map((f) => ({
+      ...f,
+      previewable: access === 'all' || isPreviewImage(f.path),
+    }));
+  });
 
   app.get<FileParams>(AGENT_ROUTES.deliveryFile(':id', ':n', '*'), async (req, reply) => {
+    const access = fileAccess(req);
     const file = resolveDeliveryFile(filesRoot(req.params.id, req.params.n), req.params['*']);
     if (!file) throw notFound('File');
+    if (access === 'images' && !isPreviewImage(file)) {
+      throw new HttpError(403, 'Until the work is paid, only image previews can be opened');
+    }
     // Sandboxed: a delivered web page can't run scripts against the agent API or read its origin.
     return reply
       .header('content-security-policy', 'sandbox')
@@ -258,9 +313,10 @@ export async function buildApp(opts: AppOptions): Promise<AgentApp> {
 
   app.post<IdParams>(AGENT_ROUTES.deliveries(':id'), async (req) => {
     if (!store.has(req.params.id)) throw notFound('Escrow');
-    return withUpload(req, 'a "file" and a "payoutInvoice"', (upload, fields) =>
-      orchestrator.addDelivery(req.params.id, upload, parse(DeliveryFieldsSchema, fields).payoutInvoice),
-    );
+    return withUpload(req, 'a "file" and a "payoutInvoice"', (upload, fields) => {
+      const body = parse(DeliveryFieldsSchema, fields);
+      return orchestrator.addDelivery(req.params.id, upload, body.payoutInvoice, body.freelancerToken);
+    });
   });
 
   app.post<IdParams>(AGENT_ROUTES.dryRun(':id'), async (req): Promise<DryRunResponse> => {

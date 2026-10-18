@@ -51,6 +51,40 @@ the deadline goes straight to `REFUNDING`. The deadline alone never refunds an e
 A failed verification returns to `FUNDED` with the failure logged and explained, so the freelancer can
 submit a fixed version. This fail-then-pass sequence is the heart of the demo.
 
+## Marketplace flow (apps/market)
+
+The marketplace UI uses the same machine with one extra state, `OPEN`: the client publishes a job and any
+freelancer can take it. The two-party flow above (both accept, then fund) still works unchanged.
+
+```
+PROPOSED ──client approves (publish)──▶ OPEN ──a freelancer takes it──▶ AGREED ──▶ AWAITING_FUNDS ──▶ FUNDED …
+   ▲                                     │  │                                          │
+   └────────── client edits (re-parse) ──┘  └─ client withdraws, or deadline ─▶ CANCELLED
+                                                                                       │
+                     OPEN ◀── not funded within FUNDING_WINDOW_SEC, or the payment failed
+```
+
+| Arrow | When | Event |
+| ----- | ---- | ----- |
+| `PROPOSED → OPEN` | `POST /escrows/:id/publish { termsHash, clientToken }`. Counts as the client's acceptance. Refused unless at least one condition is automatic (a review-only job could never be decided by code). | `listing.published` |
+| `OPEN → DRAFT` | The client edits the description (`/reparse` with its `clientToken`): new terms, unlisted until approved again. | `terms.reparse_requested` |
+| `OPEN → AGREED` | `POST /escrows/:id/take { termsHash }`: the first freelancer wins and gets a one-time `freelancerToken`. `fundingDueAt` = now + `FUNDING_WINDOW_SEC` (600). | `terms.agreed` |
+| `OPEN → CANCELLED` | The client withdraws, or `decide()` returns `cancel` at the deadline. | `escrow.cancelled` / `decision.made` |
+| `AWAITING_FUNDS → OPEN` | `decide()` returns `reopen`: not funded by `fundingDueAt`, or the payment failed. The freelancer's acceptance and token are dropped; the client's approval stays. | `funding.reopened` |
+
+- **Fee.** `fee = serviceFee(amount)`: 2% of the reward, rounded up, at least 1 base unit. It is part of
+  `termsHash`. The client escrows `amount + fee`; release pays the freelancer `amount` and the service
+  keeps `fee`; a refund returns `amount + fee`.
+- **Auto-pay.** When the client publishes, its UI pre-authorises its own party server (`POST /autopay`).
+  When the job is taken, that server attaches a refund invoice valid past the deadline and pays exactly
+  `amount + fee`. Nobody clicks "pay"; settlement never waits for anyone later.
+- **Tokens.** Marketplace jobs require the `clientToken` (edit, cancel, refund invoice, approve) and the
+  `freelancerToken` (deliver, cancel) in the body, or in the `x-escrow-token` header for files.
+- **Previews.** Before release the client and the service screen (the agent's own laptop) see image
+  previews only; everything after release. The freelancer always sees its own files.
+- **Private balances.** The agent never reads a party's wallet. Each party server answers balance, history
+  and spending only to a page served from `localhost` on its own laptop.
+
 ## Two kinds of conditions
 
 - **Automatic** (`tests_pass`, `file_hash`, `file_present`): the verifier checks them. Same as before.
@@ -70,13 +104,14 @@ client's answer, the escrow state and the clock.
    Subjective requirements a person can judge ("looks professional") become `client_review` conditions;
    `clarifications` are for things that can't be agreed yet ("the hash I'll send later"). Agent validates
    with zod, computes `termsHash` = sha256 of the canonical JSON of
-   `{ title, amount, assetId, deadline, conditions }`. State `PROPOSED`.
+   `{ title, amount, fee, assetId, deadline, conditions }` (an escrow without a fee hashes as before).
+   State `PROPOSED`.
    If the AI fails twice, the agent uses the fallback parser (see `apps/ai/CLAUDE.md`).
 3. **Accept.** Each party clicks Accept → `POST /escrows/:id/accept { role, termsHash, signature? }`.
    The agent rejects an accept whose `termsHash` does not match the current one. Signatures (BIP-322 via
    the party's WDK account `sign()`) are a nice-to-have; record them if present.
    When both accepted: `AGREED`.
-4. **Funding invoice.** Agent wallet creates a receive invoice for `amount` of `ESCROW_ASSET_ID`
+4. **Funding invoice.** Agent wallet creates a receive invoice for `amount + fee` of `ESCROW_ASSET_ID`
    (blind receive by default). The client also attaches a **refund invoice** from its own wallet.
    State `AWAITING_FUNDS`.
 5. **Pay.** Client UI shows "Lock 50 USDT" → client party server pays the agent invoice. The agent
@@ -108,8 +143,8 @@ client's answer, the escrow state and the clock.
      `POST /escrows/:id/approve { deliveryN, decision, reason?, clientToken }`.
    - Approve → `review.approved`; dispute → `review.disputed` (the reason is shown to the freelancer);
      no answer by `reviewDueAt` → `review.expired`. Each is followed by `decide()` and `decision.made`.
-10. **Settle.** Agent wallet pays the payout (or refund) invoice, auto-mines, waits for settlement.
-    Final state `RELEASED` or `REFUNDED`.
+10. **Settle.** Agent wallet pays the payout invoice (`amount`; it keeps the `fee`) or the refund invoice
+    (`amount + fee`), auto-mines, waits for settlement. Final state `RELEASED` or `REFUNDED`.
 11. **Explain.** After every log event that has `explain: true`, the agent asks `apps/ai` `POST /explain`
     and streams the explanation into that event (`event.explanation`) over WebSocket.
 
@@ -138,5 +173,10 @@ client's answer, the escrow state and the clock.
 
 The agent runs a 5-second ticker. For each `FUNDED` escrow past its deadline, it calls `decide()` and
 refunds if appropriate. For each `AWAITING_APPROVAL` escrow past its latest delivery's `reviewDueAt`, it
-emits `review.expired`, calls `decide()` and releases. For the demo, deadlines can be set in minutes and
-`REVIEW_WINDOW_SEC` to about two minutes.
+emits `review.expired`, calls `decide()` and releases. An `OPEN` listing past its deadline is cancelled,
+and an `AWAITING_FUNDS` marketplace job past `fundingDueAt` (or whose payment failed) goes back to `OPEN`.
+For the demo, deadlines can be set in minutes and `REVIEW_WINDOW_SEC` to about two minutes.
+
+The agent keeps every job in `AGENT_DATA_DIR/db.json` across restarts on purpose (money in escrow must
+survive a crash). To start a demo with no old jobs: stop the servers, then `npm run demo:clear-jobs`
+(jobs only) or `npm run demo:reset` (jobs and wallets).

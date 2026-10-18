@@ -21,6 +21,7 @@ export function Card({ title, children, className = '' }: { title?: ReactNode; c
 const STATE_STYLE: Record<EscrowState, string> = {
   DRAFT: 'bg-slate-100 text-slate-700',
   PROPOSED: 'bg-sky-100 text-sky-800',
+  OPEN: 'bg-sky-100 text-sky-800',
   AGREED: 'bg-indigo-100 text-indigo-800',
   AWAITING_FUNDS: 'bg-amber-100 text-amber-800',
   FUNDED: 'bg-teal-100 text-teal-800',
@@ -37,6 +38,7 @@ const STATE_STYLE: Record<EscrowState, string> = {
 const STATE_LABEL: Record<EscrowState, string> = {
   DRAFT: 'Reading agreement',
   PROPOSED: 'Terms proposed',
+  OPEN: 'Open',
   AGREED: 'Agreed',
   AWAITING_FUNDS: 'Waiting for funds',
   FUNDED: 'Funded',

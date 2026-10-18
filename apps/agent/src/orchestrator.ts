@@ -5,17 +5,23 @@ import {
   PARTY_ROUTES,
   PartyHealthResponseSchema,
   TERMINAL_STATES,
+  escrowTotal,
   formatAmount,
   isAutomaticCondition,
   newEscrowId,
+  serviceFee,
   termsHash,
   type Acceptance,
+  type AcceptOfferRequest,
   type AiReview,
   type ApproveRequest,
   type CreateEscrowRequest,
   type Decision,
   type Escrow,
   type EscrowState,
+  type MakeOfferRequest,
+  type Offer,
+  type OfferStatus,
   type PartyRole,
   type VerificationResult,
 } from '@escrow/shared';
@@ -26,6 +32,7 @@ import { decide } from './decide';
 import type { Dev } from './dev';
 import { log } from './log';
 import type { EventSpec, Machine } from './machine';
+import { MAX_PENDING_OFFERS, expiredOfferIds, offerExpiry, offerTerms } from './offers';
 import type { Store } from './store';
 import {
   HttpError,
@@ -62,10 +69,17 @@ export interface Upload {
   sizeBytes: number;
 }
 
-const CANCELLABLE: readonly EscrowState[] = ['DRAFT', 'PROPOSED', 'AGREED', 'AWAITING_FUNDS'];
-const BEFORE_FUNDING: readonly EscrowState[] = ['DRAFT', 'PROPOSED', 'AGREED'];
+const CANCELLABLE: readonly EscrowState[] = ['DRAFT', 'PROPOSED', 'OPEN', 'AGREED', 'AWAITING_FUNDS'];
+const BEFORE_FUNDING: readonly EscrowState[] = ['DRAFT', 'PROPOSED', 'OPEN', 'AGREED'];
 
 const cap = (role: PartyRole) => (role === 'client' ? 'Client' : 'Freelancer');
+
+/** Why a marketplace action needs an OPEN listing and this one isn't. */
+function notOpen(state: EscrowState): string {
+  if (state === 'DRAFT' || state === 'PROPOSED') return 'This job is not on the marketplace';
+  if (state === 'CANCELLED') return 'This listing is closed';
+  return 'Another freelancer already took this job';
+}
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
 
 /**
@@ -117,10 +131,53 @@ export class Orchestrator {
     }
   }
 
+  /**
+   * Marketplace escrows: the action needs the role's own token (the client's from POST /escrows, the
+   * freelancer's from POST /take). The both-parties flow keeps trusting the role in the body (LAN demo).
+   * Same hashing as the clientToken, so the same constant-time check.
+   */
+  private requireToken(id: string, role: PartyRole, token: string | undefined): void {
+    const internal = this.d.store.internal(id);
+    if (!internal.marketplace) return;
+    const hash = role === 'client' ? internal.clientTokenHash : internal.freelancerTokenHash;
+    if (!token || !checkClientToken(token, hash)) {
+      throw new HttpError(403, role === 'client'
+        ? 'Only the client who posted this job can do that'
+        : 'Only the freelancer who took this job can do that');
+    }
+  }
+
+  /**
+   * Who may open a delivery's files. The both-parties flow keeps its open file browser (LAN demo).
+   * Marketplace escrows: the freelancer always sees its own upload; the client and the agent's own
+   * laptop (the projector) see image previews until the work is paid, and everything after release.
+   * Anyone else: nothing. The client must not get the work before it pays for it.
+   */
+  fileAccess(id: string, token: string | undefined, fromAgentLaptop: boolean): 'all' | 'images' | 'none' {
+    const e = this.mustGet(id);
+    const internal = this.d.store.internal(id);
+    if (!internal.marketplace) return 'all';
+    if (token !== undefined && checkClientToken(token, internal.freelancerTokenHash)) return 'all';
+    const isClient = token !== undefined && checkClientToken(token, internal.clientTokenHash);
+    if (!isClient && !fromAgentLaptop) return 'none';
+    return e.state === 'RELEASED' ? 'all' : 'images';
+  }
+
+  /** decide() with what the agent's wallet has seen of the funding payment. */
+  private decideNow(e: Escrow, results: readonly VerificationResult[] = []): Decision {
+    const internal = this.d.store.internal(e.id);
+    const funding = internal.fundingFailed ? 'failed' : internal.fundingSeen ? 'seen' : 'none';
+    return decide({ ...e, funding }, results, safeNow());
+  }
+
   private decisionSpec(e: Escrow, decision: Decision): EventSpec {
     const titles: Record<Decision['action'], string> = {
       release: `Decision: release ${this.money(e)} to the freelancer`,
-      refund: `Decision: refund ${this.money(e)} to the client`,
+      refund: `Decision: refund ${this.money(e, escrowTotal(e))} to the client`,
+      cancel: e.state === 'OPEN'
+        ? 'Decision: close the listing, nobody took it before the deadline'
+        : 'Decision: cancel, the job was not funded before the deadline',
+      reopen: 'Decision: back on the marketplace, the job was not funded',
       retry:
         e.state === 'AWAITING_APPROVAL'
           ? 'Decision: no payment yet, the client disputed the work'
@@ -152,6 +209,7 @@ export class Orchestrator {
       title: body.title,
       rawText: body.rawText,
       amount: BigInt(body.amount).toString(),
+      fee: serviceFee(body.amount),
       assetId: config.assetId,
       assetTicker: config.assetTicker,
       precision: config.precision,
@@ -175,12 +233,13 @@ export class Orchestrator {
     return { escrow, clientToken: token };
   }
 
-  reparse(id: string, rawText?: string): Promise<Escrow> {
+  reparse(id: string, rawText?: string, clientToken?: string): Promise<Escrow> {
     return this.lock(id, () => {
       const e = this.mustGet(id);
-      if (e.state !== 'DRAFT' && e.state !== 'PROPOSED') {
+      if (e.state !== 'DRAFT' && e.state !== 'PROPOSED' && e.state !== 'OPEN') {
         throw conflict(`The agreement can only be re-read before both parties agree (state is ${e.state})`);
       }
+      this.requireToken(id, 'client', clientToken);
       const { store, machine } = this.d;
       store.patchInternal(id, { parseSeq: store.internal(id).parseSeq + 1 });
       const patch = {
@@ -193,8 +252,11 @@ export class Orchestrator {
       };
       const spec: EventSpec = { type: 'terms.reparse_requested', actor: 'client', title: 'Client asked to re-read the agreement' };
       let next: Escrow;
-      if (e.state === 'PROPOSED') {
+      if (e.state === 'PROPOSED' || e.state === 'OPEN') {
+        // From OPEN this unlists the job: the edited terms get a new termsHash and need approving again,
+        // and offers made on the old terms are void.
         next = machine.transition(e, 'DRAFT', spec, patch);
+        next = this.closeOffers(next, 'declined', 'the client changed the job');
       } else {
         next = machine.update(e, patch);
         machine.record(next, spec);
@@ -249,26 +311,248 @@ export class Orchestrator {
     });
   }
 
-  cancel(id: string, role: PartyRole): Promise<Escrow> {
+  /**
+   * The client approves the proposed requirements: that counts as the client accepting this exact
+   * termsHash, and the job goes OPEN on the marketplace. Verifiability gate: a job nothing can check
+   * automatically is never held in autonomous escrow.
+   */
+  publish(id: string, body: { termsHash: string; clientToken: string }): Promise<Escrow> {
+    return this.lock(id, () => {
+      const e = this.mustGet(id);
+      if (!checkClientToken(body.clientToken, this.d.store.internal(id).clientTokenHash)) {
+        throw new HttpError(403, 'Only the client who created this job can publish it');
+      }
+      if (e.state === 'OPEN' && e.termsHash === body.termsHash) return e; // idempotent
+      if (e.state !== 'PROPOSED') throw conflict(`Only proposed requirements can be published (state is ${e.state})`);
+      if (!e.termsHash || body.termsHash !== e.termsHash) {
+        throw conflict('These requirements are out of date. Review the current version.', { currentTermsHash: e.termsHash });
+      }
+      if (!e.conditions.some(isAutomaticCondition)) {
+        throw conflict(
+          'None of these requirements can be checked automatically, so the job cannot be held in escrow. ' +
+          'Rewrite the description with something a machine can check: tests that must pass, files that must be included, ' +
+          'or examples of input and expected output.',
+        );
+      }
+      if (safeNow().getTime() >= Date.parse(e.deadline)) throw conflict('The deadline has already passed');
+      this.d.store.patchInternal(id, { marketplace: true });
+      const acceptance: Acceptance = { role: 'client', termsHash: e.termsHash, at: nowIso() };
+      return this.d.machine.transition(
+        e,
+        'OPEN',
+        {
+          type: 'listing.published',
+          actor: 'client',
+          title: `Client published the job for ${this.money(e)} (+ ${this.money(e, e.fee ?? '0')} fee, terms ${short(e.termsHash)})`,
+          data: { termsHash: e.termsHash, amount: e.amount, fee: e.fee, total: escrowTotal(e) },
+          explain: true,
+        },
+        { acceptances: [acceptance] },
+      );
+    });
+  }
+
+  /**
+   * A freelancer takes an OPEN listing at its terms. The first one wins; the client already accepted the
+   * same termsHash, so the escrow is AGREED and the funding window starts.
+   */
+  take(id: string, body: { termsHash: string }): Promise<{ escrow: Escrow; freelancerToken: string }> {
+    return this.lock(id, () => {
+      const e = this.mustGet(id);
+      if (e.state !== 'OPEN') throw conflict(notOpen(e.state));
+      if (!e.termsHash || body.termsHash !== e.termsHash) {
+        throw conflict('The client changed this job. Review the current version.', { currentTermsHash: e.termsHash });
+      }
+      if (safeNow().getTime() >= Date.parse(e.deadline)) throw conflict('The deadline has passed');
+      const { token, hash } = newClientToken();
+      this.d.store.patchInternal(id, { freelancerTokenHash: hash, fundingSeen: false, fundingFailed: false });
+      const acceptance: Acceptance = { role: 'freelancer', termsHash: e.termsHash, at: nowIso() };
+      const fundingDueAt = new Date(safeNow().getTime() + this.d.config.fundingWindowSec * 1000).toISOString();
+      const next = this.d.machine.transition(
+        e,
+        'AGREED',
+        {
+          type: 'terms.agreed',
+          actor: 'freelancer',
+          title: `A freelancer took the job: both sides agreed to the same terms (hash ${short(e.termsHash)})`,
+          data: { termsHash: e.termsHash, fundingDueAt },
+          explain: true,
+        },
+        { acceptances: [...e.acceptances.filter((a) => a.role !== 'freelancer'), acceptance], fundingDueAt },
+      );
+      this.kick(id);
+      return { escrow: this.closeOffers(next, 'declined', 'another freelancer took the job at the listed reward'), freelancerToken: token };
+    });
+  }
+
+  /**
+   * A freelancer offers to do an OPEN listing for less. Making the offer is that freelancer accepting the
+   * listing's terms at this amount (offerTerms); nothing changes for anyone else until the client accepts.
+   */
+  makeOffer(id: string, body: MakeOfferRequest): Promise<{ escrow: Escrow; offerId: string; offerToken: string }> {
+    return this.lock(id, () => {
+      const e = this.mustGet(id);
+      if (e.state !== 'OPEN') throw conflict(notOpen(e.state));
+      if (!e.termsHash || body.termsHash !== e.termsHash) {
+        throw conflict('The client changed this job. Review the current version.', { currentTermsHash: e.termsHash });
+      }
+      const now = safeNow();
+      if (now.getTime() >= Date.parse(e.deadline)) throw conflict('The deadline has passed');
+      const amount = BigInt(body.amount).toString();
+      if (BigInt(amount) >= BigInt(e.amount)) {
+        throw new HttpError(400, `An offer must be lower than the listed reward of ${this.money(e)}. To work for that, take the job.`);
+      }
+      const offers = e.offers ?? [];
+      if (offers.filter((o) => o.status === 'pending').length >= MAX_PENDING_OFFERS) {
+        throw conflict('This listing has too many open offers. Try again later.');
+      }
+      const terms = offerTerms(e, amount);
+      const offerId = `o${offers.length + 1}`;
+      const { token, hash } = newClientToken();
+      const internal = this.d.store.internal(id);
+      this.d.store.patchInternal(id, { offerTokenHashes: { ...internal.offerTokenHashes, [offerId]: hash } });
+      const offer: Offer = {
+        id: offerId,
+        amount,
+        fee: terms.fee,
+        termsHash: terms.termsHash,
+        ...(body.note ? { note: body.note } : {}),
+        at: nowIso(),
+        expiresAt: offerExpiry(now, this.d.config.offerWindowSec, e.deadline),
+        status: 'pending',
+      };
+      const { machine } = this.d;
+      const next = machine.update(e, { offers: [...offers, offer] });
+      // The note is the freelancer's free text: shown to the client, never put in the log the AI reads.
+      machine.record(next, {
+        type: 'offer.made',
+        actor: 'freelancer',
+        title: `A freelancer offered to do it for ${this.money(e, amount)} (listed at ${this.money(e)})`,
+        data: { offerId, amount, fee: terms.fee, termsHash: terms.termsHash, expiresAt: offer.expiresAt },
+      });
+      return { escrow: next, offerId, offerToken: token };
+    });
+  }
+
+  /**
+   * The client takes a counteroffer: the terms become the offer's (amount, fee, termsHash), which that
+   * freelancer accepted by making it and the client accepts now, so the escrow is AGREED and the funding
+   * window starts, as after a take. Every other pending offer is declined.
+   */
+  acceptOffer(id: string, offerId: string, body: AcceptOfferRequest): Promise<Escrow> {
+    return this.lock(id, () => {
+      const e = this.mustGet(id);
+      const internal = this.d.store.internal(id);
+      if (!checkClientToken(body.clientToken, internal.clientTokenHash)) {
+        throw new HttpError(403, 'Only the client who posted this job can accept an offer');
+      }
+      const offer = e.offers?.find((o) => o.id === offerId);
+      if (!offer) throw notFound('Offer');
+      if (offer.status === 'accepted' && e.termsHash === offer.termsHash) return e; // idempotent
+      if (e.state !== 'OPEN') throw conflict(notOpen(e.state));
+      if (offer.status !== 'pending') throw conflict(`This offer was ${offer.status}`);
+      const now = safeNow();
+      if (now.getTime() >= Date.parse(offer.expiresAt)) throw conflict('This offer has expired');
+      if (now.getTime() >= Date.parse(e.deadline)) throw conflict('The deadline has passed');
+      if (body.termsHash !== offer.termsHash || offerTerms(e, offer.amount).termsHash !== offer.termsHash) {
+        throw conflict('This offer does not match the current job. Reload and review it.');
+      }
+      const tokenHash = internal.offerTokenHashes?.[offerId];
+      if (!tokenHash) throw new StepError('The offer has no token', 'system');
+      this.d.store.patchInternal(id, { freelancerTokenHash: tokenHash, fundingSeen: false, fundingFailed: false });
+      const acceptances: Acceptance[] = [
+        { role: 'client', termsHash: offer.termsHash, at: nowIso() },
+        { role: 'freelancer', termsHash: offer.termsHash, at: offer.at }, // agreed when it made the offer
+      ];
+      const fundingDueAt = new Date(now.getTime() + this.d.config.fundingWindowSec * 1000).toISOString();
+      const closedAt = nowIso();
+      const next = this.d.machine.transition(
+        e,
+        'AGREED',
+        {
+          type: 'terms.agreed',
+          actor: 'client',
+          title: `Client accepted a counteroffer of ${this.money(e, offer.amount)}: both sides agreed to the new terms (hash ${short(offer.termsHash)})`,
+          data: { termsHash: offer.termsHash, offerId, amount: offer.amount, fee: offer.fee, listedAmount: e.amount, fundingDueAt },
+          explain: true,
+        },
+        {
+          amount: offer.amount,
+          fee: offer.fee,
+          termsHash: offer.termsHash,
+          acceptances,
+          fundingDueAt,
+          offers: (e.offers ?? []).map((o) => (o.id === offerId ? { ...o, status: 'accepted' as const, closedAt } : o)),
+        },
+      );
+      this.kick(id);
+      return this.closeOffers(next, 'declined', 'the client accepted another offer');
+    });
+  }
+
+  /** The freelancer who made a pending offer takes it back (its offerToken). */
+  withdrawOffer(id: string, offerId: string, offerToken: string): Promise<Escrow> {
+    return this.lock(id, () => {
+      const e = this.mustGet(id);
+      const offer = e.offers?.find((o) => o.id === offerId);
+      if (!offer) throw notFound('Offer');
+      if (!checkClientToken(offerToken, this.d.store.internal(id).offerTokenHashes?.[offerId])) {
+        throw new HttpError(403, 'Only the freelancer who made this offer can withdraw it');
+      }
+      if (offer.status === 'withdrawn') return e; // idempotent
+      if (offer.status !== 'pending') throw conflict(`This offer was already ${offer.status}`);
+      return this.closeOffers(e, 'withdrawn', 'the freelancer took it back', [offerId]);
+    });
+  }
+
+  /**
+   * Close pending offers (all of them, or just `ids`) without a state change: one event per offer.
+   * Caller holds the lock.
+   */
+  private closeOffers(e: Escrow, status: Exclude<OfferStatus, 'pending' | 'accepted'>, reason: string, ids?: readonly string[]): Escrow {
+    const closing = (e.offers ?? []).filter((o) => o.status === 'pending' && (!ids || ids.includes(o.id)));
+    if (closing.length === 0) return e;
+    const closedAt = nowIso();
+    const { machine } = this.d;
+    const next = machine.update(e, { offers: (e.offers ?? []).map((o) => (closing.includes(o) ? { ...o, status, closedAt } : o)) });
+    const type = { declined: 'offer.declined', expired: 'offer.expired', withdrawn: 'offer.withdrawn' } as const;
+    for (const o of closing) {
+      machine.record(next, {
+        type: type[status],
+        actor: status === 'withdrawn' ? 'freelancer' : 'agent',
+        title: status === 'withdrawn'
+          ? `A freelancer withdrew its offer of ${this.money(e, o.amount)}`
+          : `Offer of ${this.money(e, o.amount)} ${status}: ${reason}`,
+        data: { offerId: o.id, amount: o.amount },
+      });
+    }
+    return next;
+  }
+
+  cancel(id: string, role: PartyRole, token?: string): Promise<Escrow> {
     return this.lock(id, () => {
       const e = this.mustGet(id);
       if (e.state === 'CANCELLED') return e;
       if (!CANCELLABLE.includes(e.state)) throw conflict(`Too late to cancel: the escrow is ${e.state}`);
+      if (e.state === 'OPEN' && role === 'freelancer') throw conflict('Only the client can withdraw an open listing');
+      this.requireToken(id, role, token);
       if (e.state === 'AWAITING_FUNDS' && this.d.store.internal(id).fundingSeen) {
         throw conflict("The client's payment is already on its way, so the escrow can't be cancelled now");
       }
-      return this.d.machine.transition(e, 'CANCELLED', {
+      const next = this.d.machine.transition(e, 'CANCELLED', {
         type: 'escrow.cancelled',
         actor: role,
         title: `${cap(role)} cancelled the escrow`,
       });
+      return this.closeOffers(next, 'declined', 'the client withdrew the listing');
     });
   }
 
-  setRefundInvoice(id: string, invoice: string): Promise<Escrow> {
+  setRefundInvoice(id: string, invoice: string, clientToken?: string): Promise<Escrow> {
     return this.lock(id, () => {
       const e = this.mustGet(id);
       if (TERMINAL_STATES.includes(e.state)) throw conflict(`The escrow is already ${e.state}`);
+      this.requireToken(id, 'client', clientToken); // whoever sets this decides where a refund goes
       const p = this.d.store.internal(id).payout;
       if (p?.kind === 'refund' && p.status !== 'failed') throw conflict('The refund has already been sent');
       const next = this.d.machine.update(e, { refundInvoice: invoice });
@@ -292,9 +576,10 @@ export class Orchestrator {
     });
   }
 
-  async addDelivery(id: string, upload: Upload, payoutInvoice: string): Promise<Escrow> {
+  async addDelivery(id: string, upload: Upload, payoutInvoice: string, freelancerToken?: string): Promise<Escrow> {
     return this.lock(id, async () => {
       const e = this.mustGet(id);
+      this.requireToken(id, 'freelancer', freelancerToken);
       if (e.state !== 'FUNDED') {
         const why: Partial<Record<EscrowState, string>> = {
           DELIVERED: 'The previous delivery is still being checked',
@@ -421,6 +706,7 @@ export class Orchestrator {
   private step(id: string, state: EscrowState): Promise<void> {
     switch (state) {
       case 'DRAFT': return this.parse(id);
+      case 'OPEN': return this.checkListing(id);
       case 'AGREED': return this.openFunding(id);
       case 'AWAITING_FUNDS': return this.watchFunding(id);
       case 'FUNDED': return this.checkDeadline(id);
@@ -467,7 +753,7 @@ export class Orchestrator {
       const cur = this.d.store.get(id);
       if (!cur || cur.state !== 'DRAFT' || this.d.store.internal(id).parseSeq !== seq) return; // stale
       const { conditions } = result;
-      const hash = termsHash({ title: cur.title, amount: cur.amount, assetId: cur.assetId, deadline: cur.deadline, conditions });
+      const hash = termsHash({ title: cur.title, amount: cur.amount, fee: cur.fee, assetId: cur.assetId, deadline: cur.deadline, conditions });
       const n = conditions.length;
       const auto = conditions.filter(isAutomaticCondition).length;
       const who = result.source === 'ai' ? 'AI' : 'Fallback parser';
@@ -502,23 +788,45 @@ export class Orchestrator {
     });
   }
 
+  /** OPEN: expire unanswered offers; close the listing once its deadline passes with nobody taking it. */
+  private async checkListing(id: string): Promise<void> {
+    const e = this.mustGet(id);
+    if (expiredOfferIds(e.offers, safeNow()).length === 0 && this.decideNow(e).action !== 'cancel') return;
+    await this.lock(id, () => {
+      let cur = this.d.store.get(id);
+      if (!cur || cur.state !== 'OPEN') return;
+      const expired = expiredOfferIds(cur.offers, safeNow());
+      if (expired.length > 0) cur = this.closeOffers(cur, 'expired', 'the client did not answer in time', expired);
+      const decision = this.decideNow(cur);
+      if (decision.action === 'cancel') this.applyDecision(cur, decision);
+    });
+  }
+
   private async openFunding(id: string): Promise<void> {
     if (!this.walletReady()) return;
     const e = this.mustGet(id);
+    const total = escrowTotal(e);
+    // A marketplace funding invoice dies with the funding window: a payment after that fails instead of
+    // landing on a listing that has gone back on the marketplace.
+    const left = e.fundingDueAt ? Math.ceil((Date.parse(e.fundingDueAt) - safeNow().getTime()) / 1000) : undefined;
     const inv = await this.walletCall('Could not create the funding invoice', () =>
-      this.wallet.createInvoice({ assetId: e.assetId, amount: e.amount }),
+      this.wallet.createInvoice({
+        assetId: e.assetId,
+        amount: total,
+        ...(left === undefined ? {} : { expiresInSec: Math.max(60, left) }),
+      }),
     );
     await this.lock(id, () => {
       const cur = this.d.store.get(id);
       if (!cur || cur.state !== 'AGREED') return;
-      this.d.store.patchInternal(id, { fundingRecipientId: inv.recipientId, fundingSeen: false });
+      this.d.store.patchInternal(id, { fundingRecipientId: inv.recipientId, fundingSeen: false, fundingFailed: false });
       this.d.machine.transition(
         cur,
         'AWAITING_FUNDS',
         {
           type: 'funding.invoice_created',
           actor: 'agent',
-          title: `Agent is ready to receive ${this.money(cur)}`,
+          title: `Agent is ready to receive ${this.money(cur, total)}`,
           data: { invoice: inv.invoice, recipientId: inv.recipientId, expiresAt: inv.expiresAt },
         },
         { fundingInvoice: inv.invoice },
@@ -537,8 +845,22 @@ export class Orchestrator {
       const list = await this.walletCall('Could not read the agent wallet', () => this.wallet.transfers(e.assetId));
       const t = list.find((x) => x.direction === 'incoming' && x.recipientId === rid);
 
-      if (t?.status === 'failed') throw new StepError('The funding transfer failed', 'wallet', `rawStatus ${t.rawStatus}`);
-      if (t && !this.d.store.internal(id).fundingSeen) {
+      if (t?.status === 'failed') {
+        if (!e.fundingDueAt) throw new StepError('The funding transfer failed', 'wallet', `rawStatus ${t.rawStatus}`);
+        this.d.store.patchInternal(id, { fundingFailed: true }); // marketplace: decide() reopens the listing
+      }
+      // Marketplace timeouts (not funded in the window / before the deadline, or the payment failed).
+      const exit = this.decideNow(e);
+      if (exit.action === 'reopen' || exit.action === 'cancel') {
+        await this.lock(id, () => {
+          const cur = this.d.store.get(id);
+          if (!cur || cur.state !== 'AWAITING_FUNDS') return;
+          const decision = this.decideNow(cur);
+          if (decision.action === 'reopen' || decision.action === 'cancel') this.applyDecision(cur, decision);
+        });
+        return;
+      }
+      if (t && t.status !== 'failed' && !this.d.store.internal(id).fundingSeen) {
         await this.lock(id, () => {
           const cur = this.d.store.get(id);
           if (!cur || cur.state !== 'AWAITING_FUNDS' || this.d.store.internal(id).fundingSeen) return;
@@ -546,14 +868,14 @@ export class Orchestrator {
           this.d.machine.record(cur, {
             type: 'funding.payment_seen',
             actor: 'wallet',
-            title: `Payment of ${this.money(cur)} seen, waiting for confirmation`,
+            title: `Payment of ${this.money(cur, escrowTotal(cur))} seen, waiting for confirmation`,
             data: { txid: t.txid, rawStatus: t.rawStatus },
           });
         });
       }
       if (t?.status === 'settled') {
-        if (BigInt(t.amount) < BigInt(e.amount)) {
-          throw new StepError(`Received ${this.money(e, t.amount)} but ${this.money(e)} was expected`, 'wallet');
+        if (BigInt(t.amount) < BigInt(escrowTotal(e))) {
+          throw new StepError(`Received ${this.money(e, t.amount)} but ${this.money(e, escrowTotal(e))} was expected`, 'wallet');
         }
         await this.lock(id, () => {
           const cur = this.d.store.get(id);
@@ -562,7 +884,7 @@ export class Orchestrator {
           this.d.machine.transition(cur, 'FUNDED', {
             type: 'funding.settled',
             actor: 'wallet',
-            title: `${this.money(cur)} locked in escrow`,
+            title: `${this.money(cur, escrowTotal(cur))} locked in escrow`,
             data: { txid: t.txid, amount: t.amount },
             explain: true,
           });
@@ -654,6 +976,28 @@ export class Orchestrator {
         return machine.transition(e, 'REFUNDING', spec);
       case 'retry':
         return machine.transition(e, 'FUNDED', spec);
+      case 'cancel':
+        return this.closeOffers(machine.transition(e, 'CANCELLED', spec), 'declined', 'the listing closed at its deadline');
+      case 'reopen': {
+        // Back on the marketplace: the freelancer's acceptance, token and funding invoice are void. The
+        // client's acceptance of the same termsHash still stands, so the next taker agrees at once.
+        this.d.store.patchInternal(e.id, {
+          freelancerTokenHash: undefined,
+          fundingRecipientId: undefined,
+          fundingSeen: false,
+          fundingFailed: false,
+        });
+        return machine.transition(
+          e,
+          'OPEN',
+          { ...spec, type: 'funding.reopened' },
+          {
+            acceptances: e.acceptances.filter((a) => a.role === 'client'),
+            fundingInvoice: undefined,
+            fundingDueAt: undefined,
+          },
+        );
+      }
       case 'await_approval': {
         const n = e.deliveries.at(-1)?.n;
         const reviewDueAt = new Date(safeNow().getTime() + config.reviewWindowSec * 1000).toISOString();
@@ -743,9 +1087,13 @@ export class Orchestrator {
     });
   }
 
-  /** A fresh refund invoice from the client's party server, else the one the client attached. */
+  /**
+   * A fresh refund invoice from the client's party server, else the one the client attached.
+   * Marketplace escrows only ever use the attached one: with many clients, CLIENT_PARTY_URL may be
+   * somebody else's wallet, and asking it would send this client's refund to them.
+   */
   private async refundInvoice(e: Escrow): Promise<string | undefined> {
-    const base = this.d.config.clientPartyUrl;
+    const base = this.d.store.internal(e.id).marketplace ? undefined : this.d.config.clientPartyUrl;
     if (base) {
       try {
         const health = PartyHealthResponseSchema.parse(
@@ -755,7 +1103,7 @@ export class Orchestrator {
         const res = await fetch(base + PARTY_ROUTES.walletInvoice, {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ assetId: e.assetId, amount: e.amount }),
+          body: JSON.stringify({ assetId: e.assetId, amount: escrowTotal(e) }),
           signal: AbortSignal.timeout(30_000),
         });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -778,6 +1126,8 @@ export class Orchestrator {
     const e = this.mustGet(id);
     const kind = e.state === 'RELEASING' ? 'release' : 'refund';
     const what = kind === 'release' ? 'payout' : 'refund';
+    // Release pays the reward (the service keeps the fee); a refund returns reward + fee.
+    const amount = kind === 'release' ? e.amount : escrowTotal(e);
     const { store } = this.d;
 
     let p = store.internal(id).payout;
@@ -802,7 +1152,7 @@ export class Orchestrator {
       store.patchInternal(id, { payout: { kind, status: 'sending', invoice } });
       let txid: string;
       try {
-        ({ txid } = await this.wallet.pay({ invoice, assetId: e.assetId, amount: e.amount }));
+        ({ txid } = await this.wallet.pay({ invoice, assetId: e.assetId, amount }));
       } catch (err) {
         if (err instanceof TimeoutError) {
           throw new StepError(`The ${what} did not answer in time; it may still go through`, 'wallet', errorMessage(err));
@@ -819,9 +1169,9 @@ export class Orchestrator {
           actor: 'wallet',
           title:
             kind === 'release'
-              ? `Sent ${this.money(cur)} to the freelancer (tx ${short(txid, 8)})`
-              : `Sent ${this.money(cur)} back to the client (tx ${short(txid, 8)})`,
-          data: { txid, amount: cur.amount },
+              ? `Sent ${this.money(cur, amount)} to the freelancer (tx ${short(txid, 8)})`
+              : `Sent ${this.money(cur, amount)} back to the client (tx ${short(txid, 8)})`,
+          data: { txid, amount, ...(kind === 'release' && cur.fee ? { feeKept: cur.fee } : {}) },
         });
       }
     }
@@ -845,8 +1195,8 @@ export class Orchestrator {
           this.d.machine.transition(now, kind === 'release' ? 'RELEASED' : 'REFUNDED', {
             type: kind === 'release' ? 'payout.settled' : 'refund.settled',
             actor: 'wallet',
-            title: kind === 'release' ? `Freelancer received ${this.money(now)}` : `Client received ${this.money(now)} back`,
-            data: { txid: sent.txid, amount: now.amount },
+            title: kind === 'release' ? `Freelancer received ${this.money(now, amount)}` : `Client received ${this.money(now, amount)} back`,
+            data: { txid: sent.txid, amount },
             explain: true,
           });
         });

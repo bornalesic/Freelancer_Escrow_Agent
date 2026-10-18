@@ -29,6 +29,10 @@ function decision(f: EventFacts): string {
       return `The deadline passed without a delivery that meets the conditions, so the agent decided to refund ${amt(f)} to the client.`;
     case 'await_approval':
       return `Every automatic check passed, so the ${amt(f)} stays locked while the client reviews ${plural(d.pending ?? 1, 'item')}.`;
+    case 'cancel':
+      return 'The job closed before anyone funded it, so no money moved.';
+    case 'reopen':
+      return 'The job was not funded in time, so it is back on the marketplace for another freelancer; no money moved.';
     case 'wait':
       return `The agent is waiting${d.reason ? `: ${d.reason.replace(/\.$/, '')}` : ''}.`;
     default:
@@ -51,6 +55,14 @@ const TEMPLATES: Record<LogEventType, (f: EventFacts) => string> = {
   'terms.reparse_requested': () => 'The client asked for the agreement to be read again, so new terms will be proposed.',
   'terms.accepted': (f) => `The ${f.role ?? 'party'} accepted the proposed terms.`,
   'terms.agreed': (f) => `Both sides accepted exactly the same terms, so the deal for ${amt(f)} is now agreed.`,
+  'listing.published': (f) =>
+    `The client approved the requirements, so the job for ${amt(f)} is now open for freelancers to take.`,
+  'offer.made': (f) => `A freelancer offered to do the job for ${amt(f)}; the client can accept it before it expires.`,
+  'offer.withdrawn': (f) => `The freelancer withdrew the offer of ${amt(f)}; no money moved.`,
+  'offer.declined': (f) => `The offer of ${amt(f)} was declined because the job went another way; no money moved.`,
+  'offer.expired': (f) => `The offer of ${amt(f)} expired because the client did not answer in time; no money moved.`,
+  'funding.reopened': () =>
+    "The client's payment did not arrive in time, so the job is back on the marketplace; no money moved.",
   'funding.invoice_created': (f) =>
     `The escrow agent created an invoice for ${amt(f)} so the client can lock the payment.`,
   'funding.payment_seen': (f) =>

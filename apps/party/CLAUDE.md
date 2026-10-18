@@ -34,6 +34,21 @@ with real processes (agent + both party servers, `WALLET_MODE=mock`): create →
 pays the funding invoice from its party server → agent `FUNDED`; balances client 100 → 90, agent 0 → 10.
 Remaining: `WALLET_MODE=real` once `RgbWdkWallet` lands in `packages/wallet`.
 
+## Marketplace (apps/market)
+- **Both servers on every laptop.** Anyone can pick either role, so each laptop runs `npm run dev:parties`
+  (client :4101 + freelancer :4102), each with its own mnemonic and `RGB_DATA_DIR/<role>` wallet.
+- **Private.** `/wallet`, `/wallet/pay`, `/wallet/transfers`, `/wallet/sign` and `/autopay` answer only
+  loopback requests whose `Origin` (if any) is `localhost` / `127.0.0.1` / `[::1]`. The loopback check
+  alone is not enough: a browser on this laptop is always loopback, whatever site it shows. The LAN can
+  still reach `/health` and `/wallet/invoice`.
+- **Auto-pay** (`src/autopay.ts`, client role only). `POST /autopay { escrowId, clientToken }` when the
+  client publishes. Each tick, per authorisation: when the agent shows `AWAITING_FUNDS`, attach a refund
+  invoice (valid until deadline + 1 day, max 30 days) with the clientToken, then pay exactly
+  `amount + fee`. State in `apps/party/data/<role>/autopay.json` (mode 0600); a `paying` entry found at
+  start becomes `failed`, never paid twice. `npm run demo:clear-jobs` deletes `apps/party/data`.
+- Verified end to end with real processes (mock wallets, 2026-10-18): publish → auto-pay → take →
+  funded → v1 fails → v2 passes → released; client −51, freelancer +50, agent +1 (fee).
+
 ## Learned the hard way
 - **"Refresh only while pending" is not enough for a receiver.** A wallet's first invoice for an asset
   is unbound, and its incoming transfer may not be listed under that asset until a refresh pulls the

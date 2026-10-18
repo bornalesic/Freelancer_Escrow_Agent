@@ -26,6 +26,7 @@ apps/party        per-party wallet HTTP server (client :4101, freelancer :4102) 
 apps/ai           QVAC service :4300 — /parse, /explain, /review (native Windows) [WS2]
 apps/agent        escrow server :4000 — state machine, verifier, agent wallet, WS [WS3]
 apps/web          React UI — /client, /freelancer, /agent views                   [WS4]
+apps/market       marketplace UI :5174 — role choice, listings, /service projector
 scripts/          regtest stack, demo setup/reset                                  [WS1]
 fixtures/         demo deliverables + agreement eval set                           [WS4]
 ```
@@ -47,11 +48,14 @@ npm run dev:agent               # apps/agent on :4000
 npm run dev:party:client        # apps/party on :4101, ROLE=client
 npm run dev:party:freelancer    # apps/party on :4102, ROLE=freelancer
 npm run dev:ai                  # apps/ai on :4300 (Windows PowerShell)
+npm run dev:parties            # both party servers (marketplace: every laptop runs both)
 npm run dev:web                 # apps/web on :5173
-npm run dev:mock                # agent + both parties with WALLET_MODE=mock and AI_MODE=mock
+npm run dev:market              # apps/market on :5174 (open as http://localhost:5174)
+npm run dev:mock                # agent + both parties + mock AI + market, WALLET_MODE=mock AI_MODE=mock
 npm run typecheck               # tsc --noEmit across workspaces
 npm test                        # vitest across workspaces
-npm run demo:reset              # fresh regtest wallets, funded, ready for the demo
+npm run demo:reset              # forget all jobs + fresh regtest wallets, funded, ready for the demo
+npm run demo:clear-jobs         # forget all jobs only (servers stopped); wallets keep their money
 ```
 If a script does not exist yet, create it in the right `package.json` rather than running ad-hoc commands.
 

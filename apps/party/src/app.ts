@@ -1,15 +1,22 @@
 // The party server: one party's wallet behind the PARTY_ROUTES of docs/CONTRACTS.md §4. The web UI on
-// that party's laptop uses it for everything wallet-related; the agent asks the client's for a fresh
-// refund invoice.
+// that party's laptop uses it for everything wallet-related; the client's also carries out auto-pay.
+//
+// Balances are private: everything that reveals or spends this wallet answers only requests from this
+// laptop (loopback -- a Windows browser reaching WSL arrives as 127.0.0.1). The agent and other users
+// can only ask for an invoice or a refresh.
+
+import { join } from 'node:path'
 
 import cors from '@fastify/cors'
-import Fastify, { type FastifyInstance } from 'fastify'
+import Fastify, { type FastifyInstance, type FastifyRequest } from 'fastify'
 import { ZodError, z, type ZodType } from 'zod'
 import {
+  AutopayRequestSchema,
   InvoiceRequestSchema,
   PARTY_ROUTES,
   PayRequestSchema,
   SignRequestSchema,
+  type AutopayStatus,
   type EscrowWallet,
   type InvoiceResponse,
   type PartyHealthResponse,
@@ -20,6 +27,7 @@ import {
 } from '@escrow/shared'
 import { WalletError } from '@escrow/wallet'
 
+import { Autopay } from './autopay.ts'
 import type { Config } from './config.ts'
 import { makeLog, type Log } from './log.ts'
 import { RefreshLoop } from './refresh-loop.ts'
@@ -36,7 +44,36 @@ export interface PartyApp {
   app: FastifyInstance
   wallet: PartyWallet
   loop: RefreshLoop
+  /** The client's auto-pay (undefined on a freelancer's party server). */
+  autopay: Autopay | undefined
   log: Log
+}
+
+const LOOPBACK = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1'])
+
+const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]'])
+
+/**
+ * This wallet's balance, history and spending are for this laptop's own app only. A browser on this
+ * laptop always connects from loopback, whatever page it shows, so the page's Origin must be loopback
+ * too: otherwise any website opened here could read or spend the wallet. Open the UI as localhost.
+ */
+function onlyThisLaptop(req: FastifyRequest): void {
+  if (!LOOPBACK.has(req.ip)) {
+    throw new HttpError(403, 'Only the app on this laptop can see or spend this wallet')
+  }
+  const origin = req.headers.origin
+  if (origin !== undefined && !isLoopbackOrigin(origin)) {
+    throw new HttpError(403, 'Open the app as http://localhost to use this wallet')
+  }
+}
+
+function isLoopbackOrigin(origin: string): boolean {
+  try {
+    return LOOPBACK_HOSTS.has(new URL(origin).hostname)
+  } catch {
+    return false // "null" (sandboxed page, file://) or garbage
+  }
 }
 
 /**
@@ -59,6 +96,9 @@ export async function buildApp(opts: AppOptions): Promise<PartyApp> {
     ...(opts.wallet === undefined ? {} : { wallet: opts.wallet }),
   })
   const loop = new RefreshLoop({ wallet, pollMs: config.pollMs, log })
+  const autopay = config.role === 'client'
+    ? new Autopay({ file: join(config.dataDir, 'autopay.json'), agentUrl: config.agentUrl, wallet, log, pollMs: config.pollMs })
+    : undefined
 
   const app = Fastify({ logger: false, bodyLimit: 64 * 1024 })
   await app.register(cors, { origin: true }) // LAN demo: the UI comes from another port or laptop
@@ -89,7 +129,8 @@ export async function buildApp(opts: AppOptions): Promise<PartyApp> {
     ...(wallet.ready ? {} : { error: wallet.error ?? 'The wallet is starting' }),
   }))
 
-  app.get(PARTY_ROUTES.wallet, async (): Promise<WalletResponse> => {
+  app.get(PARTY_ROUTES.wallet, async (req): Promise<WalletResponse> => {
+    onlyThisLaptop(req)
     const w = wallet.get()
     const [info, assets] = await Promise.all([w.info(), w.listAssets()])
     return { ...info, assets }
@@ -103,6 +144,7 @@ export async function buildApp(opts: AppOptions): Promise<PartyApp> {
 
   // The only route that moves money. The UI calls it with an invoice the agent provided.
   app.post(PARTY_ROUTES.walletPay, async (req): Promise<PayResponse> => {
+    onlyThisLaptop(req)
     const body = parse(PayRequestSchema, req.body)
     try {
       const { txid } = await wallet.get().pay(body)
@@ -121,18 +163,38 @@ export async function buildApp(opts: AppOptions): Promise<PartyApp> {
     return { ok: true }
   })
 
-  app.get(PARTY_ROUTES.walletTransfers, async (req): Promise<TransferSummary[]> =>
-    wallet.get().transfers(parse(TransfersQuerySchema, req.query).assetId))
+  app.get(PARTY_ROUTES.walletTransfers, async (req): Promise<TransferSummary[]> => {
+    onlyThisLaptop(req)
+    return wallet.get().transfers(parse(TransfersQuerySchema, req.query).assetId)
+  })
 
   app.post(PARTY_ROUTES.walletSign, async (req): Promise<SignResponse> => {
+    onlyThisLaptop(req)
     const { message } = parse(SignRequestSchema, req.body)
     const w = wallet.get()
     if (w.sign === undefined) throw new HttpError(501, 'This wallet cannot sign messages')
     return w.sign(message)
   })
 
-  app.addHook('onClose', async () => { loop.stop() })
-  loop.start() // the first pass starts the wallet; later passes retry it if it failed
+  // The client's pre-authorisation, sent by its own UI when it approves a listing.
+  app.post(PARTY_ROUTES.autopay, async (req): Promise<AutopayStatus> => {
+    onlyThisLaptop(req)
+    if (autopay === undefined) throw new HttpError(404, 'Auto-pay is only on the client\'s party server')
+    const { escrowId, clientToken } = parse(AutopayRequestSchema, req.body)
+    return autopay.authorise(escrowId, clientToken)
+  })
 
-  return { app, wallet, loop, log }
+  app.get(PARTY_ROUTES.autopay, async (req): Promise<AutopayStatus[]> => {
+    onlyThisLaptop(req)
+    return autopay?.list() ?? []
+  })
+
+  app.addHook('onClose', async () => {
+    loop.stop()
+    autopay?.stop()
+  })
+  loop.start() // the first pass starts the wallet; later passes retry it if it failed
+  autopay?.start()
+
+  return { app, wallet, loop, autopay, log }
 }

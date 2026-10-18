@@ -96,7 +96,8 @@ function resultFacts(r: Partial<VerificationResult> & { evidence?: Data }, data:
 
 const MONEY_EVENTS = new Set(['funding.invoice_created', 'funding.payment_seen', 'funding.settled',
   'payout.sent', 'payout.settled', 'refund.sent', 'refund.settled']);
-const AMOUNT_EVENTS = new Set([...MONEY_EVENTS, 'escrow.created', 'terms.agreed', 'decision.made']);
+const AMOUNT_EVENTS = new Set([...MONEY_EVENTS, 'escrow.created', 'terms.agreed', 'decision.made',
+  'offer.made', 'offer.withdrawn', 'offer.declined', 'offer.expired']); // the offer's amount (event data)
 const DEADLINE_EVENTS = new Set(['escrow.created', 'decision.made']);
 const DELIVERY_EVENTS = /^(delivery|verify|review)\./;
 

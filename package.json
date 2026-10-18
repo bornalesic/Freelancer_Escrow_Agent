@@ -14,13 +14,16 @@
     "dev:party:client": "npm run dev:client -w apps/party",
     "dev:party:freelancer": "npm run dev:freelancer -w apps/party",
     "dev:ai": "npm run dev -w apps/ai",
+    "dev:parties": "concurrently -n client,freelancer \"npm:dev:party:client\" \"npm:dev:party:freelancer\"",
     "dev:web": "npm run dev -w apps/web",
-    "dev:mock": "cross-env WALLET_MODE=mock AI_MODE=mock concurrently -n agent,client,freelancer,ai,web \"npm:dev:agent\" \"npm:dev:party:client\" \"npm:dev:party:freelancer\" \"npm:dev:ai\" \"npm:dev:web\"",
+    "dev:market": "npm run dev -w apps/market",
+    "dev:mock": "cross-env WALLET_MODE=mock AI_MODE=mock concurrently -n agent,client,freelancer,ai,market \"npm:dev:agent\" \"npm:dev:party:client\" \"npm:dev:party:freelancer\" \"npm:dev:ai\" \"npm:dev:market\"",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "test": "npm run test --workspaces --if-present",
     "setup:role": "tsx scripts/setup-role.ts",
     "demo:setup": "tsx scripts/setup-demo.ts",
     "demo:reset": "tsx scripts/reset-demo.ts",
+    "demo:clear-jobs": "tsx scripts/reset-demo.ts --jobs-only",
     "fixtures:zip": "node fixtures/zip.mjs"
   },
   "devDependencies": {
