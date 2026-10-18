@@ -169,22 +169,22 @@ function RequirementsReview({ escrow, asset, token }: { escrow: Escrow; asset: C
 
         <ErrorText>{reparse.error}</ErrorText>
 
-        {auto === 0 ? (
-          <Notice tone="orange" title="This can't be published yet">
-            Nothing here can be checked automatically, so the system could never decide on its own whether to pay. Add something
-            checkable: tests that must pass, a file that must be included, or examples of input and output.
+        {auto === 0 && (
+          <Notice tone="amber" title="You review every delivery yourself">
+            Nothing here can be checked automatically, so the system never pays on its own: each delivery waits for you to approve or
+            dispute it. If you don't answer within the review window, the freelancer is paid. To add automatic checks, add tests that
+            must pass, a file that must be included, or examples of input and output.
           </Notice>
-        ) : (
-          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 pt-4">
-            <p className="max-w-lg text-xs text-slate-500">
-              Approving publishes the listing and pre-authorises your wallet to pay {money(total, asset)} into escrow when a freelancer
-              takes it. You can still edit or withdraw it until then.
-            </p>
-            <Button busy={publish.busy} disabled={tooPoor || !escrow.termsHash} onClick={() => void publish.run()}>
-              Approve and publish
-            </Button>
-          </div>
         )}
+        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 pt-4">
+          <p className="max-w-lg text-xs text-slate-500">
+            Approving publishes the listing and pre-authorises your wallet to pay {money(total, asset)} into escrow when a freelancer
+            takes it. You can still edit or withdraw it until then.
+          </p>
+          <Button busy={publish.busy} disabled={tooPoor || !escrow.termsHash} onClick={() => void publish.run()}>
+            Approve and publish
+          </Button>
+        </div>
         {tooPoor && <ErrorText>Your wallet has {money(spendable ?? '0', asset)}, but this job needs {money(total, asset)}.</ErrorText>}
         <ErrorText>{publish.error}</ErrorText>
       </div>

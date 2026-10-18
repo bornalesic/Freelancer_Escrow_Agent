@@ -4,7 +4,7 @@
 //   1. attaches a refund invoice that stays valid until a day after the deadline, so a refund never needs
 //      the client again, and
 //   2. pays the job's reward + fee into escrow.
-// At most the authorised total (a counteroffer the client accepted costs less), never more, never twice for
+// At most the authorised total (the client authorises again after accepting a higher counteroffer), never more, never twice for
 // one funding invoice. `paying` is saved BEFORE the payment, so a crash mid-payment never leads to a second
 // automatic one. Saved to disk, so a restart carries on.
 

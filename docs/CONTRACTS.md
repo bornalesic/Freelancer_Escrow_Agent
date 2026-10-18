@@ -92,13 +92,13 @@ export interface Escrow {
   updatedAt: string;
 }
 
-// A freelancer's counteroffer on an OPEN listing: the same job for a lower reward. Making it = that
+// A freelancer's counteroffer on an OPEN listing: the same job for another reward. Making it = that
 // freelancer accepting `termsHash` (the listing's terms with this amount and fee). The client accepting it
 // agrees to the same hash → AGREED. Pending until expiresAt = min(now + OFFER_WINDOW_SEC, deadline);
 // declined when the listing is taken, edited or closed.
 export interface Offer {
   id: string;                    // "o1", "o2", ... per escrow
-  amount: string;                // lower than the listing's amount
+  amount: string;                // any amount > 0, lower or higher than the listing's
   fee: string;                   // serviceFee(amount)
   termsHash: string;
   note?: string;                 // ≤ 500 chars
@@ -278,7 +278,7 @@ Selected by `WALLET_MODE=real|mock`.
 | POST | `/escrows/:id/accept` | `{ role, termsHash, signature?, address? }` | `Escrow` (both-parties flow without a listing) |
 | POST | `/escrows/:id/publish` | `{ termsHash, clientToken }` | `Escrow` (`PROPOSED → OPEN`; counts as the client's acceptance; `403` wrong token, `409` stale `termsHash` or no automatic check) |
 | POST | `/escrows/:id/take` | `{ termsHash }` | `Escrow & { freelancerToken }` (`OPEN → AGREED → AWAITING_FUNDS`; first taker wins, `409` after) |
-| POST | `/escrows/:id/offers` | `{ termsHash, amount, note? }` | `{ escrow, offerId, offerToken }` (counteroffer on an `OPEN` listing; `amount` must be lower than the listing's; `409` stale `termsHash`, not `OPEN`, past the deadline, or 20 pending offers) |
+| POST | `/escrows/:id/offers` | `{ termsHash, amount, note? }` | `{ escrow, offerId, offerToken }` (counteroffer on an `OPEN` listing; any `amount` > 0; `409` stale `termsHash`, not `OPEN`, past the deadline, or 20 pending offers) |
 | POST | `/escrows/:id/offers/:offerId/accept` | `{ termsHash, clientToken }` | `Escrow` (`termsHash` = the offer's; `OPEN → AGREED` at the offer's amount and fee; every other pending offer is declined; `403` wrong token, `409` offer not pending/expired) |
 | POST | `/escrows/:id/offers/:offerId/withdraw` | `{ offerToken }` | `Escrow` (`403` wrong token, `409` not pending) |
 | POST | `/escrows/:id/cancel` | `{ role, token? }` | `Escrow` (before funding; marketplace escrows need the role's token) |
@@ -386,7 +386,7 @@ and `/wallet/refresh` answer from the LAN.
 **Auto-pay.** When the client approves a listing, its UI calls `POST /autopay`. When a freelancer takes the
 job, the client's party server attaches a refund invoice valid until a day after the deadline
 (`refund-invoice` with `clientToken`) and pays exactly `escrowTotal()` to the funding invoice — at most the
-authorised total (an accepted counteroffer costs less), never more, never twice for one invoice.
+authorised total, never more, never twice for one invoice. After accepting a higher counteroffer the client UI authorises again.
 
 All three servers send permissive CORS headers (LAN demo) and log every request on one line.
 Errors: `400 { error, details }` (zod issues) for bad bodies, `404` unknown escrow, `409 { error, details? }`

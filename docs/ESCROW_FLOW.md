@@ -66,7 +66,7 @@ PROPOSED ──client approves (publish)──▶ OPEN ──a freelancer takes 
 
 | Arrow | When | Event |
 | ----- | ---- | ----- |
-| `PROPOSED → OPEN` | `POST /escrows/:id/publish { termsHash, clientToken }`. Counts as the client's acceptance. Refused unless at least one condition is automatic (a review-only job could never be decided by code). | `listing.published` |
+| `PROPOSED → OPEN` | `POST /escrows/:id/publish { termsHash, clientToken }`. Counts as the client's acceptance. A job with no automatic conditions can be published too: every delivery then goes to client review (`AWAITING_APPROVAL`). | `listing.published` |
 | `OPEN → DRAFT` | The client edits the description (`/reparse` with its `clientToken`): new terms, unlisted until approved again. | `terms.reparse_requested` |
 | `OPEN → AGREED` | `POST /escrows/:id/take { termsHash }`: the first freelancer wins and gets a one-time `freelancerToken`. `fundingDueAt` = now + `FUNDING_WINDOW_SEC` (600). | `terms.agreed` |
 | `OPEN → CANCELLED` | The client withdraws, or `decide()` returns `cancel` at the deadline. | `escrow.cancelled` / `decision.made` |

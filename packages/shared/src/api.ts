@@ -143,7 +143,7 @@ export const TakeResponseSchema = EscrowSchema.extend({ freelancerToken: z.strin
 export type TakeResponse = z.infer<typeof TakeResponseSchema>;
 
 /**
- * `POST /escrows/:id/offers`: a freelancer offers to do an OPEN listing for a lower reward. `termsHash` is
+ * `POST /escrows/:id/offers`: a freelancer offers to do an OPEN listing for another reward (any amount > 0). `termsHash` is
  * the listing version the freelancer saw; the offer's own termsHash (same terms, this amount and its fee)
  * is computed by the agent and is what both sides end up accepting.
  */
@@ -283,7 +283,7 @@ export type AutopayRequest = z.infer<typeof AutopayRequestSchema>;
 export const AutopayStatusSchema = z.object({
   escrowId: z.string(),
   total: AmountSchema,                                       // the most it pays: reward + fee when authorised
-                                                             // (an accepted counteroffer costs less, never more)
+                                                             // (a higher accepted counteroffer is authorised again)
   status: z.enum(['waiting', 'paying', 'paid', 'failed', 'done']),
   error: z.string().optional(),
   txid: z.string().optional(),

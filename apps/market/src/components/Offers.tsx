@@ -1,4 +1,5 @@
-// Counteroffers: a freelancer offers to do an open listing for less; the client sees every offer and can
+// Counteroffers: a freelancer offers to do an open listing at its own price (above or below the listed
+// reward); the client sees every offer and can
 // accept one, which agrees the job at that reward (new terms, fee recalculated) with that freelancer.
 import { useState } from 'react';
 import { escrowTotal, toBaseUnits, type ConfigResponse, type Escrow } from '@escrow/shared';
@@ -18,8 +19,8 @@ export function ClientOffers({ escrow, asset, token, autopayOn }: { escrow: Escr
     const total = money(escrowTotal(o), asset);
     if (!window.confirm(`Accept ${money(o.amount, asset)}? The job goes to this freelancer at that reward and your wallet pays ${total} into escrow. Other offers are declined.`)) return;
     await agentApi.acceptOffer(escrow.id, o.id, o.termsHash, token);
-    // Auto-pay already covers it (a lower price is within what you approved); set it up if it never was.
-    if (!autopayOn) await partyApi('client').autopay(escrow.id, token);
+    // Approve auto-pay for the new total: a higher price than the listing needs a new limit, a lower one fits the old.
+    if (!autopayOn || BigInt(o.amount) > BigInt(escrow.amount)) await partyApi('client').autopay(escrow.id, token);
   });
   const closed = (escrow.offers ?? []).filter((o) => !offers.includes(o));
 
@@ -27,7 +28,7 @@ export function ClientOffers({ escrow, asset, token, autopayOn }: { escrow: Escr
     <Card title="Counteroffers" aside={offers.length > 0 && <Pill tone="blue">{offers.length} open</Pill>}>
       {offers.length === 0 ? (
         <p className="text-sm text-slate-500">
-          No offers yet. Freelancers can offer to do the job for less than {money(escrow.amount, asset)}; you choose whether to accept.
+          No offers yet. Freelancers can offer their own price instead of {money(escrow.amount, asset)}; you choose whether to accept.
         </p>
       ) : (
         <ul className="space-y-3">
@@ -75,7 +76,7 @@ export function MakeOffer({ escrow, asset }: { escrow: Escrow; asset: ConfigResp
   } catch {
     units = undefined;
   }
-  const valid = units !== undefined && BigInt(units) > 0n && BigInt(units) < BigInt(escrow.amount);
+  const valid = units !== undefined && BigInt(units) > 0n;
 
   const send = useAction(async () => {
     if (!units || !escrow.termsHash) return;
@@ -91,7 +92,7 @@ export function MakeOffer({ escrow, asset }: { escrow: Escrow; asset: ConfigResp
   });
 
   return (
-    <Card title="Or offer a lower price">
+    <Card title="Or offer your own price">
       {pending ? (
         <div className="space-y-2 text-sm">
           <p>
@@ -106,13 +107,13 @@ export function MakeOffer({ escrow, asset }: { escrow: Escrow; asset: ConfigResp
         </div>
       ) : (
         <div className="space-y-3">
-          <Field label={`Your price (${displayTicker(asset.assetTicker)})`} hint={`Lower than ${money(escrow.amount, asset)}. The client sees it with your note.`}>
+          <Field label={`Your price (${displayTicker(asset.assetTicker)})`} hint={`Listed at ${money(escrow.amount, asset)}. Ask for less or more; the client sees it with your note.`}>
             <input className={inputClass} inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} />
           </Field>
           <Field label="Note (optional)">
             <textarea className={`${inputClass} min-h-16`} maxLength={500} value={note} onChange={(e) => setNote(e.target.value)} placeholder="Why you, or when you can deliver" />
           </Field>
-          {amount && !valid && <p className="text-xs text-red-700">Enter an amount above zero and below {money(escrow.amount, asset)}.</p>}
+          {amount && !valid && <p className="text-xs text-red-700">Enter an amount above zero.</p>}
           <Button variant="secondary" className="w-full" busy={send.busy} disabled={!valid} onClick={() => void send.run()}>Send offer</Button>
           <ErrorText>{send.error}</ErrorText>
         </div>
