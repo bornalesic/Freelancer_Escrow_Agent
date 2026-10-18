@@ -104,7 +104,7 @@ export async function buildApp(opts: AppOptions): Promise<AgentApp> {
 
   const wallets = new WalletHolder(config);
   await wallets.create(opts.wallet);
-  const dev = new Dev(config, wallets);
+  const dev = new Dev(config);
   const orchestrator = new Orchestrator({ config, store, machine, wallets, ai, dev });
   const dryRuns = new DryRuns({ config, store, ai });
 
