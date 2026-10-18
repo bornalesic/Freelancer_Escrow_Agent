@@ -3,6 +3,8 @@ export * from './events.ts';
 export * from './wallet.ts';
 export * from './ai.ts';
 export * from './api.ts';
+export * from './assist.ts';
+export * from './examples.ts';
 export * from './amount.ts';
 export * from './hash.ts';
 export * from './ids.ts';

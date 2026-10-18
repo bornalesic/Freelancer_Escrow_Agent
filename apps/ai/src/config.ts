@@ -24,6 +24,13 @@ export interface AiConfig {
   parseBudgetMs: number;
   explainBudgetMs: number;
   reviewBudgetMs: number;
+  assistBudgetMs: number;
+  /**
+   * `examples` checks in /parse (they also need the kind in ConditionSchema): `literal` (default, AI_EXAMPLES=on)
+   * uses only examples people wrote (agreement or interview answers); `model` also lets QVAC propose cases,
+   * which the 2B gets wrong (scratch/probe-assist.ts: correct work failed); `off`.
+   */
+  examples: 'off' | 'literal' | 'model';
   /** Context window for the whole model; split across `parallel` slots. */
   ctxSize: number;
   parallel: number;
@@ -57,6 +64,8 @@ export function readConfig(env: NodeJS.ProcessEnv = process.env): AiConfig {
     parseBudgetMs: Math.max(5000, int(env.AI_PARSE_TIMEOUT_MS, 90_000) - MARGIN_MS),
     explainBudgetMs: Math.max(3000, int(env.AI_EXPLAIN_TIMEOUT_MS, 30_000) - MARGIN_MS),
     reviewBudgetMs: Math.max(5000, int(env.AI_REVIEW_TIMEOUT_MS, 30_000) - MARGIN_MS),
+    assistBudgetMs: Math.max(5000, int(env.AI_ASSIST_TIMEOUT_MS, 20_000) - MARGIN_MS),
+    examples: (({ off: 'off', model: 'model' }) as const)[env.AI_EXAMPLES?.trim().toLowerCase() as 'off' | 'model'] ?? 'literal',
     ctxSize: CTX_SIZE,
     parallel: PARALLEL,
   };

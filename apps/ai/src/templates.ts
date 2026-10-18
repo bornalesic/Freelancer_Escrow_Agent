@@ -65,7 +65,9 @@ const TEMPLATES: Record<LogEventType, (f: EventFacts) => string> = {
     if (!f.result) return `${what} finished.`;
     if (f.result.passed) return `${what} passed.`;
     if (f.result.failingTests?.length) {
-      return `${what} failed: the test ${listing(f.result.failingTests.map(quote))} did not pass.`;
+      const values = f.result.expected !== undefined && f.result.actual !== undefined
+        ? ` (it expected "${f.result.expected}" but got "${f.result.actual}")` : '';
+      return `${what} failed: the test ${listing(f.result.failingTests.map(quote))} did not pass${values}.`;
     }
     if (f.result.problem) return `${what} failed: ${f.result.problem}.`;
     return `${what} failed${f.result.exitCode !== undefined ? ` (exit code ${f.result.exitCode})` : ''}.`;

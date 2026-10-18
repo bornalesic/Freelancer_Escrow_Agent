@@ -23,7 +23,7 @@ export interface EventFacts {
   clientReview?: string[];      // terms.proposed: what the client will judge
   clarifications?: string[];
   condition?: { description: string };
-  result?: { passed: boolean; exitCode?: number; failingTests?: string[]; problem?: string };
+  result?: { passed: boolean; exitCode?: number; failingTests?: string[]; expected?: string; actual?: string; problem?: string };
   checks?: { passed: number; total: number; failed: string[] };
   decision?: { action: string; reason?: string; pending?: number; after?: 'approval' | 'dispute' | 'no_answer' };
   review?: { looksMet: number; looksUnmet: number; unsure: number };
@@ -59,15 +59,37 @@ export function failingTestNames(stdout: string | undefined, max = 3): string[] 
   return names.slice(0, max);
 }
 
+const QUOTED_VALUE = /^'((?:[^'\\]|\\.)*)'$|^"((?:[^"\\]|\\.)*)"$/;
+function inspected(v: string): string {
+  const t = v.trim().replace(/,$/, '');
+  const m = QUOTED_VALUE.exec(t);
+  const value = m ? (m[1] ?? m[2]!).replace(/\\(.)/g, '$1') : t;
+  return value.length > 80 ? `${value.slice(0, 79)}…` : value;
+}
+
+/** The first failed assertion's actual vs expected value (node:assert, jest, pytest), if the output shows it. */
+export function assertionPair(stdout: string | undefined): { actual: string; expected: string } | undefined {
+  if (!stdout) return undefined;
+  const node = [/^\s*actual:\s*(.+?)\s*$/m.exec(stdout), /^\s*expected:\s*(.+?)\s*$/m.exec(stdout)];
+  if (node[0] && node[1]) return { actual: inspected(node[0][1]!), expected: inspected(node[1][1]!) };
+  const jest = [/^\s*Received:\s*(.+?)\s*$/m.exec(stdout), /^\s*Expected:\s*(.+?)\s*$/m.exec(stdout)];
+  if (jest[0] && jest[1]) return { actual: inspected(jest[0][1]!), expected: inspected(jest[1][1]!) };
+  const py = /\bassert\s+(.+?)\s+==\s+(.+?)\s*$/m.exec(stdout);
+  if (py) return { actual: inspected(py[1]!), expected: inspected(py[2]!) };
+  return undefined;
+}
+
 function resultFacts(r: Partial<VerificationResult> & { evidence?: Data }, data: Data): EventFacts['result'] {
   const evidence = obj(r.evidence) ?? {};
   const failingTests = Array.isArray(data.failedTests)
     ? data.failedTests.filter((t): t is string => typeof t === 'string').slice(0, 3)
     : failingTestNames(str(evidence.stdoutTail));
+  const pair = r.passed === true ? undefined : assertionPair(str(evidence.stdoutTail));
   return {
     passed: r.passed === true,
     exitCode: num(evidence.exitCode),
     failingTests: failingTests.length ? failingTests : undefined,
+    ...(pair ? { expected: pair.expected, actual: pair.actual } : {}),
     problem: str(evidence.error),
   };
 }

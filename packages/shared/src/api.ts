@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { AmountSchema, EscrowSchema, IsoDateSchema, PartyRoleSchema, Sha256HexSchema } from './domain.ts';
 import { DeliveryFileSchema } from './ai.ts';
+import type { AssistName } from './assist.ts';
 import { LogEventSchema } from './events.ts';
 import { AssetBalanceSchema, WalletInfoSchema } from './wallet.ts';
 
@@ -24,6 +25,10 @@ export const AGENT_ROUTES = {
   deliveryFile: (id: string, n: number | string, filePath: string) =>
     `/escrows/${id}/deliveries/${n}/files/${filePath.split('/').map(encodeURIComponent).join('/')}`,
   approve: (id: string) => `/escrows/${id}/approve`,
+  /** Practice run of the verifier on an upload (multipart `file`); no state change. */
+  dryRun: (id: string) => `/escrows/${id}/dry-run`,
+  /** Proxy to apps/ai `/assist/:name` for the names in PROXIED_ASSISTS. `assist(':name')` is the route pattern. */
+  assist: (name: string) => `/assist/${name}`,
   retryStep: (id: string) => `/escrows/${id}/retry-step`,
   devMine: '/dev/mine',
   devReset: '/dev/reset',
@@ -36,6 +41,7 @@ export const AI_ROUTES = {
   explain: '/explain',
   explainSync: '/explain/sync',
   review: '/review',
+  assist: (name: AssistName) => `/assist/${name}`,
 } as const;
 
 export const PARTY_ROUTES = {

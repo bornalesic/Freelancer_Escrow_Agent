@@ -75,6 +75,36 @@ for agent / party / AI (from `/health`), and a clear error banner instead of bla
    Done: `components/Review.tsx` (files viewer, AI opinion, Approve/Dispute), `lib/clientToken.ts`; fixture
    `?fixture=1&escrow=esc_b4k3`. Tested end to end against the real agent (dispute → v2 → approve, and expiry).
 
+8. **AI assist features** (planned, after Integration 2; `docs/AI_ASSIST_PLAN.md`). The contract is in
+   `@escrow/shared` (`assist.ts`, `examples.ts`). All calls go to the agent's `POST /assist/:name` (WS3's
+   proxy, timeout ~20 s). A `503`/timeout means "AI unavailable": hide the feature and carry on, never block.
+   In tier order:
+   - **A · Verifiability badge**: `verifiability(conditions)` → "5 of 6 checked automatically", on the
+     terms and in the freelancer `JobList`. No AI needed.
+   - **A · Make it checkable**: client, `PROPOSED`. Call `/assist/rewrite` once per `termsHash`. Under each
+     `client_review` card that has a suggestion: "Make it checkable: *<rewrite>*" + **Use this** →
+     `agentApi.reparse(id, applyRewrite(escrow.rawText, s.quote, s.rewrite))`.
+   - **A · Clarifying interview**: "Turn into checks" first calls `/assist/clarify`. If there are questions,
+     show a card: each question, its `why` in small text, one-click `options` + a free-text box. **Use
+     answers** → `withInterviewAnswers(rawText, answers)` (put it in the textarea too, so the client sees
+     what will be agreed) → `createEscrow`. **Skip** → `createEscrow` with the original text. No questions
+     or a `503` → `createEscrow` straight away.
+   - **A · Dry run**: in `UploadPanel`, a **Check without submitting** button → multipart `POST
+     AGENT_ROUTES.dryRun(id)` with `file` → `DryRunResponse`. Show ✓/✗ per condition and, for failures,
+     `hints.items[].why` + `hint` ("QVAC hint, advice only"). The real **Submit** stays as it is.
+   - **A · `examples` cards** (once WS3 flips the kind; typecheck will show where): `KIND_TITLE.examples =
+     'Example outputs'`, a small table `input → expected` (monospace, `JSON.stringify` the strings), and
+     **Download acceptance test** → `renderExamplesTest(c)` as a Blob named `acceptance-<id>.test.mjs`
+     ("run it with `node --test acceptance-c3.test.mjs` in your project folder").
+   - B · Price/deadline: on the new-agreement form, once title/text/amount/minutes are filled (debounced),
+     `/assist/estimate` → amber `warnings` + "Typical for a *small* job: 50–300 tUSDT · 2 h–2 days". Advice only.
+   - B · Q&A: freelancer, on proposed terms: "Ask about this job" → `/assist/answer` (send the escrow's
+     title, rawText, conditions, clarifications). `answered` → show the answer + the quoted terms;
+     otherwise "The terms don't say this. Ask the client before accepting".
+   - C · "My skills" box on `/freelancer` → `/assist/match` with the `PROPOSED` jobs → sort `JobList`,
+     show `fit` + `reason`. "Split with my team" on a job (names + skills) → `/assist/split` → who does what.
+   - Demo script beat suggestion is in `docs/AI_ASSIST_PLAN.md` (WS4 section).
+
 ## Running it
 - `npm run dev:web` → http://localhost:5173/{client,freelancer,agent} (listens on 0.0.0.0 for the LAN).
 - `?fixture=1` renders every view from `src/fixtures/snapshot.ts` with no agent running (`?fixture=0` turns

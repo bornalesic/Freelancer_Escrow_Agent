@@ -79,6 +79,16 @@ cut. Otherwise it stays a roadmap slide for the judges.
 Order: (1) WS3 lands the contract, while WS2 can start `/review` against a local type; (2) everyone in
 parallel; (3) mock path first (`AI_MODE=mock` returns a fixed review) so WS4 isn't waiting on QVAC.
 
+## Planned change: AI assist features (after Integration 2)
+
+QVAC helps write and meet the terms: AI-written example checks (`examples` condition), a pre-submission
+dry run with fix hints, a clarifying interview, a verifiability score with measurable rewrites,
+price/deadline warnings, Q&A from the terms, and job matching / team splitting. All advisory; `decide()` is
+unchanged. Plan, contract and tiers: `docs/AI_ASSIST_PLAN.md`; tasks in `apps/agent/CLAUDE.md` and
+`apps/web/CLAUDE.md` ("AI assist features"). Contract is additive and already in `@escrow/shared`; the only
+breaking step (adding `examples` to `ConditionSchema`) is one WS3 commit together with the verifier.
+**Go / no-go:** Integration 2 first; tier A only if it runs before the freeze, the rest is a roadmap slide.
+
 ## Git rules
 - `main` must always run. Work on your `ws/*` branch and merge `main` into it at least every 2 hours
   (`git merge origin/main`). Never rebase pushed commits and never force-push (organizer rule).

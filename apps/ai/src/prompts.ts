@@ -20,9 +20,24 @@ import type { EventFacts } from './facts.ts';
 //   review-v1  2026-10-17  first version: one grammar slot per client_review id, note before opinion.
 //   review-v2  2026-10-17  2B called navy #1e3a5f "warm" (landing-v1 → looks_met in integration). Code now
 //                          lists each colour's name + warm/cool in the prompt; colours.ts guards the rest.
+//   examples-v1 2026-10-18 model writes example inputs + exact outputs for a named JS function or command (data
+//                          only; the test file is rendered by code). 2B on the demo agreement: wrong outputs
+//                          ("Hello World 123" → "hello-world123"), so slugify-v2 FAILED 5/6 runs.
+//   examples-v2 2026-10-18 steps before `expected`, guard: expected == last step. v2 passes 8/8, but every case
+//                          was "Hello World"-like: punctuation never tested, so v1 passed 8/8 too.
+//   examples-v3 2026-10-18 code lists the rules; (1) one input per rule, (2) all rules applied step by step.
+//                          Still "Hello World!" → "hello-world!" (strip rule skipped): v2 failed 1/8.
+//                          => the default (AI_EXAMPLES=on) uses only examples people wrote; the model path is
+//                          AI_EXAMPLES=model, for a bigger model. Prompts in assistPrompts.ts.
+//   clarify-v1, rewrite-v1, estimate-v1, answer-v1, hint-v1, match-v1, split-v1  2026-10-18  first versions
+//                          of the /assist/* prompts (docs/AI_ASSIST_PLAN.md), in assistPrompts.ts. Code writes
+//                          every fact the user relies on (hint "why", estimate ranges, the score); the model
+//                          adds wording/judgement.
 export const PARSE_PROMPT_VERSION = 'parse-v3';
 export const EXPLAIN_PROMPT_VERSION = 'explain-v3';
 export const REVIEW_PROMPT_VERSION = 'review-v2';
+export const EXAMPLES_PROMPT_VERSION = 'examples-v1';
+export const ASSIST_PROMPT_VERSION = 'assist-v1';
 
 /**
  * Grammar for /parse output (passed as responseFormat json_schema; llama.cpp turns it into GBNF).

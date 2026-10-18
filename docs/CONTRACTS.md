@@ -243,6 +243,8 @@ Selected by `WALLET_MODE=real|mock`.
 | GET  | `/escrows/:id/deliveries/:n/files` | – | `{ path, sizeBytes }[]` (the unpacked delivery) |
 | GET  | `/escrows/:id/deliveries/:n/files/*` | – | the raw file, sent with `Content-Security-Policy: sandbox` |
 | POST | `/escrows/:id/approve` | `{ deliveryN, decision: 'approve' \| 'dispute', reason?, clientToken }` | `Escrow`; `403` wrong token, `409` not `AWAITING_APPROVAL` or not the latest delivery, `400` dispute without `reason` |
+| POST | `/escrows/:id/dry-run` | multipart: `file` | `DryRunResponse` (verifier on a practice upload + QVAC fix hints; no state change) — planned, WS3 |
+| POST | `/assist/:name` | the assist's request (`ASSIST_SCHEMAS`) | its result; `404` unknown/not proxied name, `503` AI unreachable — planned, WS3 |
 | POST | `/escrows/:id/retry-step` | `{ force? }` | `Escrow` (re-run a stuck step now; `force` re-sends a payout/refund whose outcome is unknown after a crash — check the wallet first) |
 | POST | `/dev/mine` | `{ blocks?: number }` | `{ height }` (regtest only) |
 | POST | `/dev/reset` | – | clears db (dev only) |
@@ -262,6 +264,24 @@ It never appears in `Escrow`, `LogEvent.data`, WebSocket messages or logs. Other
 | POST | `/explain` | `{ event: LogEvent, escrow: Escrow }` | `text/event-stream` of `{ text }` deltas, final `{ done: true, text, source? }` (`source`: `'ai' \| 'template'`) |
 | POST | `/explain/sync` | same | `{ text, source }` (non-streaming fallback) |
 | POST | `/review` | `ReviewRequest` | `AiReview` (§1); advisory only |
+| POST | `/assist/clarify` | `ClarifyRequest` | `ClarifyResult` (≤ 3 interview questions) |
+| POST | `/assist/rewrite` | `RewriteRequest` | `RewriteResult` (verifiability score + measurable rewrites) |
+| POST | `/assist/estimate` | `EstimateRequest` | `EstimateResult` (job size, typical price/time, warnings) |
+| POST | `/assist/answer` | `AnswerRequest` | `AnswerResult` (answer from the terms, or `answered:false`) |
+| POST | `/assist/hint` | `HintRequest` | `HintResult` (why each failed check failed + where to look) |
+| POST | `/assist/match` | `MatchRequest` | `MatchResult` (jobs ranked for a freelancer's skills) |
+| POST | `/assist/split` | `SplitRequest` | `SplitResult` (conditions divided among team members) |
+
+**AI assist** (`packages/shared/src/assist.ts`, plan in `docs/AI_ASSIST_PLAN.md`): every `/assist/*` result
+carries `source: 'ai' | 'fallback'` and always answers (deterministic fallback when the model is down or its
+output fails the guards). All advisory; nothing here reaches `decide()`. The agent proxies the UI's calls as
+`POST /assist/:name` for the names in `PROXIED_ASSISTS` (all but `hint`, which the agent calls inside
+`POST /escrows/:id/dry-run`, response `DryRunResponse`). Agent → AI timeout: `AI_ASSIST_TIMEOUT_MS`.
+
+**`examples` condition** (`packages/shared/src/examples.ts`, standalone until WS3 adds it to `ConditionSchema`):
+`{ id, kind: 'examples', description, target: { type: 'js_function', export, file? } | { type: 'command',
+command }, cases: { input, expected }[] (1–10), timeoutSec }`. The verifier writes `renderExamplesTest(c)`
+outside the delivery and runs `examplesTestCommand(file)` in the delivery root; passed = exit code 0.
 
 ```ts
 export interface ParseResult {
