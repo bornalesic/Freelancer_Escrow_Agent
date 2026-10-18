@@ -143,8 +143,8 @@ Contract is already in `@escrow/shared` (`assist.ts`, `examples.ts`, additive). 
    `renderExamplesTest(c)` to a file **outside** the unpacked root, e.g.
    `path.join(path.dirname(root), 'acceptance', `${c.id}.test.mjs`)`, then
    `runCommand(examplesTestCommand(file), root, c.timeoutSec)` and build the result exactly like `tests_pass`.
-   Typecheck then shows every other exhaustive switch to update. The web's (`Terms.tsx`) belongs to WS4; tell
-   them, or add a minimal case. Tests: slugify-v1 fails `slugify("Hello, World!") → "hello-world"`, v2
+   Typecheck then shows every other exhaustive switch to update: only `verifier/index.ts` (apps/ai and
+   apps/web already handle the kind; checked by simulating the flip). Tests: slugify-v1 fails `slugify("Hello, World!") → "hello-world"`, v2
    passes. `packages/shared/test/assist.test.ts` shows how. Once the union accepts the kind, apps/ai turns
    examples written in an agreement (`"A B" → "a-b"`) into this check, so merge this to `main` and have the
    AI laptop pull it at the same time.

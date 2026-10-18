@@ -75,10 +75,19 @@ for agent / party / AI (from `/health`), and a clear error banner instead of bla
    Done: `components/Review.tsx` (files viewer, AI opinion, Approve/Dispute), `lib/clientToken.ts`; fixture
    `?fixture=1&escrow=esc_b4k3`. Tested end to end against the real agent (dispute → v2 → approve, and expiry).
 
-8. **AI assist features** (planned, after Integration 2; `docs/AI_ASSIST_PLAN.md`). The contract is in
-   `@escrow/shared` (`assist.ts`, `examples.ts`). All calls go to the agent's `POST /assist/:name` (WS3's
-   proxy, timeout ~20 s). A `503`/timeout means "AI unavailable": hide the feature and carry on, never block.
-   In tier order:
+8. **AI assist features** (`docs/AI_ASSIST_PLAN.md`). **Done on branch `UI` (2026-10-18)**, everything below.
+   Live use needs WS3's agent routes (`POST /assist/:name`, `POST /escrows/:id/dry-run`, the `examples` flip);
+   until then every assist hides itself and the old flow is unchanged. See it all with
+   `?fixture=1&escrow=esc_t1c4` (proposed titleCase terms with an `examples` check: score, "Make it
+   checkable", Q&A, team split) and the slugify fixture on `/freelancer` (drop any file named `*v1*` and press
+   **Check without submitting** for a failing practice run with a hint).
+   Files: `lib/assist.ts` (`assist()`, `dryRun()`; 404 = route missing → `AssistUnavailable`, remembered;
+   503/unreachable = AI down → unavailable for now; 400/409 are real errors), `useAssistResult` in
+   `lib/hooks.ts`, `fixtures/assist.ts` (canned answers for `?fixture=1`), `lib/terms.ts` (`AnyCondition`,
+   `isExamples`: compile before and after the flip), components `Verifiability`, `Checkable`, `Interview`,
+   `PriceCheck`, `DryRun`, `Examples`, `AskAboutJob`, `TeamSplit`. Tests: `lib/assist.test.ts` (fixtures match
+   the shared schemas, 404/503/400 handling), `components/render.test.ts` (server-render smoke test).
+   The spec it was built from (contract in `@escrow/shared` `assist.ts` / `examples.ts`), in tier order:
    - **A · Verifiability badge**: `verifiability(conditions)` → "5 of 6 checked automatically", on the
      terms and in the freelancer `JobList`. No AI needed.
    - **A · Make it checkable**: client, `PROPOSED`. Call `/assist/rewrite` once per `termsHash`. Under each

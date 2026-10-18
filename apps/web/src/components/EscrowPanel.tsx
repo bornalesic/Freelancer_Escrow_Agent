@@ -4,6 +4,8 @@ import { formatAmount, type Escrow, type EscrowState, type LogEvent } from '@esc
 import { agentApi } from '../lib/api';
 import { currentProblem, isClosed, type EscrowView } from '../lib/escrowStore';
 import { useAction } from '../lib/hooks';
+import { AskAboutJob } from './AskAboutJob';
+import { TeamSplit } from './TeamSplit';
 import { Explanation } from './DecisionLog';
 import { Deliveries } from './Deliveries';
 import { EditAgreement } from './EditAgreement';
@@ -216,6 +218,12 @@ export function EscrowPanel({ view, role, onNew }: { view: EscrowView; role: Par
                 <summary className="cursor-pointer">Original agreement</summary>
                 <p className="mt-2 whitespace-pre-wrap rounded-lg bg-slate-50 p-3 text-slate-700">{escrow.rawText}</p>
               </details>
+              {role === 'freelancer' && !isClosed(escrow.state) && (
+                <>
+                  <AskAboutJob key={escrow.id} escrow={escrow} />
+                  <TeamSplit key={`team-${escrow.termsHash}`} escrow={escrow} />
+                </>
+              )}
             </div>
           </Card>
         )}

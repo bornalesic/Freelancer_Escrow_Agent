@@ -74,7 +74,7 @@ it by editing their own tests.
 
 **The one step that is not additive** (WS3, feature 1): add `ExamplesConditionSchema` to the
 `ConditionSchema` union and `CONDITION_KINDS`. That breaks every exhaustive switch over `Condition['kind']`
-(agent verifier, web `KIND_TITLE` / `conditionDetail`; `apps/ai` already handles the kind), so it lands
+(only the agent verifier: `apps/ai` and `apps/web` already handle the kind), so it lands
 in one WS3 commit together with the verifier case. `apps/ai` only emits `examples` once `ConditionSchema`
 accepts them (checked at runtime), so nothing changes before that commit. **Both the agent
 laptop and the AI laptop must run the same `main`**, or the agent rejects the parse and uses its fallback.
@@ -97,13 +97,14 @@ laptop and the AI laptop must run the same `main`**, or the agent rejects the pa
 3. **A · Dry run** `POST /escrows/:id/dry-run` → `DryRunResponse`, calling `/assist/hint` itself.
 4. C · Q&A forwarding to the client (state + routes + `qa.*` events): only if everything above is done.
 
-## WS4 — UI — tasks (details in `apps/web/CLAUDE.md` → "AI assist features")
-1. **A** Verifiability badge (no AI, just `verifiability(conditions)`) + "Make it checkable" rewrites.
-2. **A** Clarifying interview card on the new-agreement form.
-3. **A** Dry run + hints in the upload panel.
-4. **A** `examples` cards in the terms + "Download acceptance test" (once WS3 flips the kind).
-5. B Price/deadline warnings; Q&A box. C Skills match + team split.
-6. Demo script: suggested beat for 1:50 is "freelancer checks v1 first → QVAC: `slugify.js` never strips
+## WS4 — UI — done on branch `UI` (2026-10-18; details in `apps/web/CLAUDE.md` → "AI assist features")
+Each feature hides itself until WS3's routes exist; all of it can be seen now with `?fixture=1&escrow=esc_t1c4`.
+1. [x] **A** Verifiability badge (terms, job list, projector) + "Make it checkable" rewrites.
+2. [x] **A** Clarifying interview card on the new-agreement form.
+3. [x] **A** Dry run + hints in the upload panel ("Check without submitting").
+4. [x] **A** `examples` cards in the terms + "Download acceptance test" (works before and after WS3's flip).
+5. [x] B Price/deadline warnings; Q&A box. C Skills match + team split.
+6. [ ] Demo script: suggested beat for 1:50 is "freelancer checks v1 first → QVAC: `slugify.js` never strips
    punctuation, `"Hello, World!"` became `"hello,-world!"` → fix → v2 passes → submit → paid". Keep one real
    failed submission somewhere (in the script or in Q&A) so the judges still see `decide()` refusing payment.
 

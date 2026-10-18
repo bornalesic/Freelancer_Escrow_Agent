@@ -3,6 +3,7 @@ import type { WsMessage } from '@escrow/shared';
 import { agentWsUrl, config } from '../config';
 import { fixtureViews } from '../fixtures/snapshot';
 import { agentApi } from './api';
+import { assist, isUnavailable, type AssistName, type AssistTypes } from './assist';
 import { emptyStream, streamReducer, type StreamState } from './escrowStore';
 import { errorMessage } from './http';
 
@@ -118,6 +119,47 @@ export function useEscrowStream(escrowId?: string): { state: StreamState; status
   return { state, status };
 }
 
+
+export interface AssistResult<T> {
+  data?: T;
+  loading: boolean;
+  /** The agent has no such route yet, or QVAC is unreachable: hide the feature. */
+  unavailable: boolean;
+}
+
+/**
+ * Runs an assist once per `key` (null = not now), `delayMs` after the key last changed (debounce).
+ * Advice only: failures leave `data` empty instead of showing an error.
+ */
+export function useAssistResult<N extends AssistName>(
+  name: N,
+  body: AssistTypes[N][0] | null,
+  key: string | null,
+  delayMs = 0,
+): AssistResult<AssistTypes[N][1]> {
+  const [state, setState] = useState<AssistResult<AssistTypes[N][1]> & { key?: string }>({ loading: false, unavailable: false });
+  const bodyRef = useRef(body);
+  bodyRef.current = body;
+
+  useEffect(() => {
+    const req = bodyRef.current;
+    if (key === null || !req) return;
+    let stopped = false;
+    const timer = setTimeout(() => {
+      setState({ key, loading: true, unavailable: false }); // never show an answer to an older request
+      assist(name, req)
+        .then((data) => !stopped && setState({ key, data, loading: false, unavailable: false }))
+        .catch((err) => !stopped && setState({ key, loading: false, unavailable: isUnavailable(err) }));
+    }, delayMs);
+    return () => {
+      stopped = true;
+      clearTimeout(timer);
+    };
+  }, [name, key, delayMs]);
+
+  // Data for an older key is not shown (e.g. terms changed); while waiting for the new one, `loading`.
+  return state.key === key && key !== null ? state : { loading: key !== null && !state.unavailable, unavailable: state.unavailable };
+}
 
 /** Wraps an async action with busy/error state for buttons. */
 export function useAction<A extends unknown[]>(fn: (...args: A) => Promise<unknown>) {
