@@ -1,11 +1,16 @@
-// Client step 1: the job in plain language, the amount and a deadline.
+// Client step 1: the job in plain language, the amount and a deadline. Before the agreement is sent, QVAC may
+// ask up to 3 clarifying questions (skipped when it has none or the AI is unavailable). A price/deadline check
+// runs while typing.
 import { useState, type FormEvent } from 'react';
-import { toBaseUnits, type Escrow } from '@escrow/shared';
+import { toBaseUnits, withInterviewAnswers, type ClarifyQuestion, type Escrow } from '@escrow/shared';
 import { agentApi } from '../lib/api';
 import { useAgentConfig } from '../lib/agentConfig';
+import { assist } from '../lib/assist';
 import { saveClientToken } from '../lib/clientToken';
 import { DEMO_AGREEMENT, REVIEW_AGREEMENT } from '../lib/demo';
 import { useAction } from '../lib/hooks';
+import { InterviewCard } from './Interview';
+import { PriceCheck } from './PriceCheck';
 import { ErrorBanner } from './ui';
 
 const input =
@@ -17,19 +22,58 @@ export function NewAgreementForm({ onCreated }: { onCreated: (escrow: Escrow) =>
   const [rawText, setRawText] = useState('');
   const [amount, setAmount] = useState('');
   const [minutes, setMinutes] = useState('30');
+  // The interview runs once per text: editing the title or the text asks again.
+  const [interviewed, setInterviewed] = useState(false);
+  const [questions, setQuestions] = useState<ClarifyQuestion[]>();
+  const [answers, setAnswers] = useState<Record<string, string>>({});
 
-  const create = useAction(async () => {
+  const edit = (set: (v: string) => void) => (v: string) => {
+    set(v);
+    setInterviewed(false);
+    setQuestions(undefined);
+  };
+
+  const checkForm = () => {
     if (!asset) throw new Error('Still loading the asset settings from the agent.');
     const mins = Number(minutes);
     if (!Number.isFinite(mins) || mins <= 0) throw new Error('Deadline must be a positive number of minutes.');
-    const { clientToken, ...escrow } = await agentApi.createEscrow({
-      title: title.trim(),
-      rawText: rawText.trim(),
-      amount: toBaseUnits(amount, asset.precision),
-      deadline: new Date(Date.now() + mins * 60_000).toISOString(),
-    });
+    return { amount: toBaseUnits(amount, asset.precision), deadline: new Date(Date.now() + mins * 60_000).toISOString() };
+  };
+
+  const createWith = async (text: string) => {
+    const { clientToken, ...escrow } = await agentApi.createEscrow({ title: title.trim(), rawText: text.trim(), ...checkForm() });
     if (clientToken) saveClientToken(escrow.id, clientToken); // returned only here, needed to approve
     onCreated(escrow);
+  };
+
+  const create = useAction(async () => {
+    checkForm();
+    if (!interviewed) {
+      // Advice only: any failure (agent without the route, AI down, timeout) means "no questions".
+      const qs = await assist('clarify', { title: title.trim(), rawText: rawText.trim() }).then((r) => r.questions, () => []);
+      setInterviewed(true);
+      if (qs.length) {
+        setQuestions(qs);
+        setAnswers({});
+        return;
+      }
+    }
+    await createWith(rawText);
+  });
+
+  const sendAnswers = useAction(async () => {
+    const merged = withInterviewAnswers(
+      rawText.trim(),
+      (questions ?? []).map((q) => ({ topic: q.topic, answer: answers[q.id] ?? '' })),
+    );
+    setRawText(merged); // the client sees exactly what is sent and agreed
+    setQuestions(undefined);
+    await createWith(merged);
+  });
+
+  const skip = useAction(async () => {
+    setQuestions(undefined);
+    await createWith(rawText);
   });
 
   const paste = (a: typeof DEMO_AGREEMENT) => {
@@ -37,12 +81,17 @@ export function NewAgreementForm({ onCreated }: { onCreated: (escrow: Escrow) =>
     setRawText(a.rawText);
     setAmount(a.amount);
     setMinutes(String(a.deadlineMinutes));
+    setInterviewed(false);
+    setQuestions(undefined);
   };
 
   const submit = (e: FormEvent) => {
     e.preventDefault();
     void create.run();
   };
+
+  const busy = create.busy || sendAnswers.busy || skip.busy;
+  const error = create.error ?? sendAnswers.error ?? skip.error;
 
   return (
     <form onSubmit={submit} className="space-y-4">
@@ -59,11 +108,11 @@ export function NewAgreementForm({ onCreated }: { onCreated: (escrow: Escrow) =>
       </div>
       <label className="block space-y-1">
         <span className="text-sm font-medium text-slate-700">Job title</span>
-        <input className={input} value={title} onChange={(e) => setTitle(e.target.value)} required maxLength={120} />
+        <input className={input} value={title} onChange={(e) => edit(setTitle)(e.target.value)} required maxLength={120} />
       </label>
       <label className="block space-y-1">
         <span className="text-sm font-medium text-slate-700">What should be delivered? Write it in plain language.</span>
-        <textarea className={`${input} min-h-40`} value={rawText} onChange={(e) => setRawText(e.target.value)} required />
+        <textarea className={`${input} min-h-40`} value={rawText} onChange={(e) => edit(setRawText)(e.target.value)} required />
       </label>
       <div className="grid gap-4 sm:grid-cols-2">
         <label className="block space-y-1">
@@ -75,14 +124,26 @@ export function NewAgreementForm({ onCreated }: { onCreated: (escrow: Escrow) =>
           <input className={input} value={minutes} onChange={(e) => setMinutes(e.target.value)} inputMode="numeric" pattern="\d+" required />
         </label>
       </div>
-      {create.error && <ErrorBanner>{create.error}</ErrorBanner>}
-      <button
-        type="submit"
-        disabled={create.busy || !asset}
-        className="rounded-lg bg-slate-900 px-6 py-3 text-lg font-semibold text-white hover:bg-slate-700 disabled:opacity-50"
-      >
-        {create.busy ? 'Sending…' : 'Turn into checks'}
-      </button>
+      <PriceCheck title={title} rawText={rawText} amount={amount} minutes={minutes} ticker={asset?.assetTicker ?? 'USDT'} />
+      {questions ? (
+        <InterviewCard
+          questions={questions}
+          answers={answers}
+          onAnswer={(id, a) => setAnswers((s) => ({ ...s, [id]: a }))}
+          onUse={() => void sendAnswers.run()}
+          onSkip={() => void skip.run()}
+          busy={busy}
+        />
+      ) : (
+        <button
+          type="submit"
+          disabled={busy || !asset}
+          className="rounded-lg bg-slate-900 px-6 py-3 text-lg font-semibold text-white hover:bg-slate-700 disabled:opacity-50"
+        >
+          {create.busy ? (interviewed ? 'Sending…' : 'QVAC is reading your agreement…') : 'Turn into checks'}
+        </button>
+      )}
+      {error && <ErrorBanner>{error}</ErrorBanner>}
       <p className="text-sm text-slate-500">A local AI (QVAC) proposes checks. Nothing moves until both of you accept them.</p>
     </form>
   );

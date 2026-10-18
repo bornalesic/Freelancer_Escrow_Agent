@@ -6,6 +6,7 @@ import { DecisionLog } from '../components/DecisionLog';
 import { Layout } from '../components/Layout';
 import { latestDelivery, OpinionChip, SourceBadge } from '../components/Review';
 import { StateTimeline } from '../components/StateTimeline';
+import { VerifiabilityBadge } from '../components/Verifiability';
 import { isClientReview } from '../lib/terms';
 import { AnimatedAmount, Countdown, ReviewCountdown, StateChip } from '../components/ui';
 import { config } from '../config';
@@ -141,6 +142,11 @@ export function AgentView() {
                 {formatAmount(view.escrow.amount, view.escrow.precision)} {view.escrow.assetTicker}
               </p>
               <StateChip state={view.escrow.state} large />
+              {view.escrow.state !== 'DRAFT' && (
+                <div>
+                  <VerifiabilityBadge conditions={view.escrow.conditions} />
+                </div>
+              )}
               {reviewDue ? (
                 <p className="font-semibold text-sky-700">
                   <ReviewCountdown dueAt={reviewDue} />

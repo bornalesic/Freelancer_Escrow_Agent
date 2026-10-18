@@ -1,8 +1,9 @@
 // Local stand-ins for the agent's WebSocket `snapshot` (open any view with `?fixture=1`).
-// Test data only: the slugify demo after the first delivery failed, waiting for v2; and the bakery
+// Test data only: the slugify demo after the first delivery failed, waiting for v2; the bakery
 // landing page (client review) after the client disputed v1, with v2 awaiting approval
-// (`?fixture=1&escrow=esc_b4k3`).
-import { termsHash, type Escrow, type LogEvent } from '@escrow/shared';
+// (`?fixture=1&escrow=esc_b4k3`); and proposed titleCase terms for the AI assist screens
+// (`?fixture=1&escrow=esc_t1c4`).
+import { termsHash, type Condition, type Escrow, type LogEvent } from '@escrow/shared';
 import type { EscrowView } from '../lib/escrowStore';
 
 const ID = 'esc_7f3a';
@@ -241,8 +242,63 @@ export const reviewFixtureEvents: LogEvent[] = [
   }),
 ];
 
+// ---- AI assist: proposed terms with an `examples` check and two client-review items -------------
+// (`?fixture=1&escrow=esc_t1c4`): verifiability score, "Make it checkable", Q&A, team split, examples.
+
+const AID = 'esc_t1c4';
+const a = (min: number, sec = 0) => new Date(Date.UTC(2026, 9, 17, 8, min, sec)).toISOString();
+
+/** An `examples` condition (not in ConditionSchema until WS3 flips it, hence the cast). */
+const examplesCondition = {
+  id: 'c1',
+  kind: 'examples',
+  description: 'titleCase returns the agreed output for 2 example inputs.',
+  target: { type: 'js_function', export: 'titleCase' },
+  cases: [
+    { input: 'hello world', expected: 'Hello World' },
+    { input: 'the quick fox', expected: 'The Quick Fox' },
+  ],
+  timeoutSec: 30,
+} as unknown as Condition;
+
+export const assistFixtureEscrow: Escrow = withHash({
+  id: AID,
+  title: 'titleCase helper',
+  rawText:
+    'Build a JavaScript function `titleCase` that capitalises the first letter of each word. For example, "hello world" becomes "Hello World" and "the quick fox" becomes "The Quick Fox". Make the docs nice and keep the code clean. Pay 40 USDT. Deadline: 2 hours.',
+  amount: '40000000',
+  assetId: 'rgb:fixture-asset-id',
+  assetTicker: 'tUSDT',
+  precision: 6,
+  deadline: soon(2 * 3600),
+  state: 'PROPOSED',
+  summary:
+    'The freelancer builds a JavaScript titleCase function. The 40 tUSDT are released once titleCase gives the agreed output for every example and the client approves what they review.',
+  clarifications: [],
+  conditions: [
+    examplesCondition,
+    { id: 'c2', kind: 'client_review', description: 'Make the docs nice.' },
+    { id: 'c3', kind: 'client_review', description: 'Keep the code clean.' },
+  ],
+  termsHash: '',
+  acceptances: [],
+  deliveries: [],
+  createdAt: a(0),
+  updatedAt: a(0, 20),
+});
+
+export const assistFixtureEvents: LogEvent[] = [
+  { id: `${AID}:0001`, escrowId: AID, at: a(0), actor: 'client', type: 'escrow.created', title: 'Client created the agreement', explain: false },
+  {
+    id: `${AID}:0002`, escrowId: AID, at: a(0, 20), actor: 'ai', type: 'terms.proposed', title: 'AI proposed 1 check and 2 items for the client to judge', explain: true,
+    explanation: 'The two examples became an automatic check. Whether the docs are nice and the code is clean is for the client to judge.',
+    explanationSource: 'ai',
+  },
+];
+
 /** Every escrow shown in fixture mode. */
 export const fixtureViews: EscrowView[] = [
   { escrow: fixtureEscrow, events: fixtureEvents },
   { escrow: reviewFixtureEscrow, events: reviewFixtureEvents },
+  { escrow: assistFixtureEscrow, events: assistFixtureEvents },
 ];

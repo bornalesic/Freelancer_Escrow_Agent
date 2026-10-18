@@ -3,21 +3,24 @@ import type { ReactNode } from 'react';
 import type { Condition, Escrow, PartyRole } from '@escrow/shared';
 import { agentApi, partyApi } from '../lib/api';
 import { useAction } from '../lib/hooks';
-import { isClientReview, termsMatch } from '../lib/terms';
+import { asAny, isClientReview, isExamples, termsMatch, type AnyCondition } from '../lib/terms';
+import { MakeCheckable, useRewrites } from './Checkable';
+import { ExamplesTable } from './Examples';
 import { ErrorBanner } from './ui';
+import { VerifiabilityBadge } from './Verifiability';
 
 type Party = PartyRole;
 
-const KIND_TITLE: Record<Condition['kind'], string> = {
+const KIND_TITLE: Record<AnyCondition['kind'], string> = {
   tests_pass: 'Tests pass',
   file_present: 'File included',
   file_hash: 'File matches exactly',
+  examples: 'Example outputs',
   client_review: 'Client decides',
 };
 
-
-
-export function conditionDetail(c: Condition): string {
+export function conditionDetail(condition: Condition): string {
+  const c = asAny(condition);
   switch (c.kind) {
     case 'tests_pass':
       return c.command;
@@ -25,6 +28,8 @@ export function conditionDetail(c: Condition): string {
       return c.pathPattern;
     case 'file_hash':
       return `${c.fileName ?? 'whole upload'} · sha256 ${c.sha256.slice(0, 12)}…`;
+    case 'examples':
+      return `${c.target.type === 'js_function' ? `${c.target.export}()` : c.target.command} · ${c.cases.length} example${c.cases.length === 1 ? '' : 's'}`;
     case 'client_review':
       return c.description;
   }
@@ -71,6 +76,7 @@ export function ReviewConditionCard({
 }
 
 export function ConditionCard({ condition: c, status }: { condition: Condition; status?: 'pass' | 'fail' }) {
+  const any = asAny(c);
   const icon = status === 'pass' ? '✓' : status === 'fail' ? '✗' : '☐';
   const tone =
     status === 'pass'
@@ -86,11 +92,14 @@ export function ConditionCard({ condition: c, status }: { condition: Condition; 
       >
         {icon}
       </span>
-      <div className="min-w-0">
-        <p className="font-semibold">
-          {KIND_TITLE[c.kind]} — <code className="rounded bg-slate-100 px-1.5 py-0.5 text-sm font-normal">{conditionDetail(c)}</code>
-        </p>
-        <p className="text-sm text-slate-600">{c.description}</p>
+      <div className="min-w-0 flex-1 space-y-2">
+        <div>
+          <p className="font-semibold">
+            {KIND_TITLE[any.kind]} — <code className="rounded bg-slate-100 px-1.5 py-0.5 text-sm font-normal">{conditionDetail(c)}</code>
+          </p>
+          <p className="text-sm text-slate-600">{c.description}</p>
+        </div>
+        {isExamples(any) && !status && <ExamplesTable condition={any} />}
       </div>
     </div>
   );
@@ -99,9 +108,12 @@ export function ConditionCard({ condition: c, status }: { condition: Condition; 
 export function TermsView({ escrow, role }: { escrow: Escrow; role: Party }) {
   const automatic = escrow.conditions.filter((c) => !isClientReview(c));
   const review = escrow.conditions.filter(isClientReview);
+  // Client, before agreeing: QVAC's measurable rewordings of the items they would otherwise judge.
+  const rewrites = useRewrites(escrow, role === 'client' && escrow.state === 'PROPOSED' && review.length > 0);
   return (
     <div className="space-y-4">
       {escrow.summary && <p className="text-lg leading-relaxed text-slate-800">{escrow.summary}</p>}
+      <VerifiabilityBadge conditions={escrow.conditions} />
       <div className="space-y-2">
         <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-500">Checks the agent will run</h3>
         {automatic.length === 0 ? (
@@ -115,9 +127,14 @@ export function TermsView({ escrow, role }: { escrow: Escrow; role: Party }) {
           <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-500">
             {role === 'client' ? 'You judge these yourself' : 'The client judges these'}
           </h3>
-          {review.map((c) => (
-            <ReviewConditionCard key={c.id} condition={c} role={role} />
-          ))}
+          {review.map((c) => {
+            const s = rewrites.get(c.id);
+            return (
+              <ReviewConditionCard key={c.id} condition={c} role={role}>
+                {s && <MakeCheckable escrow={escrow} suggestion={s} />}
+              </ReviewConditionCard>
+            );
+          })}
           <p className="text-sm text-slate-500">
             After the automatic checks pass, QVAC gives the client an opinion and the client approves or disputes. No answer in
             time means the freelancer is paid.
