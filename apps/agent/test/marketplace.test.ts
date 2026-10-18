@@ -174,6 +174,40 @@ describe('marketplace flow', () => {
     await t.waitFor(job.id, 'AWAITING_FUNDS');
   });
 
+  it('a payment first seen after the funding window is not abandoned: the job is funded, not reopened', async () => {
+    // Slow wallet polling: the payment arrives after fundingDueAt but before the agent's next look.
+    const t = await start({ fundingWindowSec: 1, walletPollMs: 1500, mockSettleMs: 2000 });
+    const job = await t.taken();
+    const recipientId = t.agent.store.internal(job.id).fundingRecipientId!;
+    await new Promise((r) => setTimeout(r, 1200));
+    expect(t.agent.wallets.stub!.simulateIncoming(recipientId, 'late-tx')).toBe(true);
+    const funded = await t.waitFor(job.id, 'FUNDED');
+    expect(funded.events.map((e) => e.type)).not.toContain('funding.reopened');
+    expect(funded.events.map((e) => e.type)).toContain('funding.payment_seen');
+  });
+
+  it('a job cannot be cancelled while its payment is on the way, even before the agent noticed it', async () => {
+    const t = await start({ walletPollMs: 5000, mockSettleMs: 5000 });
+    const job = await t.taken();
+    const recipientId = t.agent.store.internal(job.id).fundingRecipientId!;
+    expect(t.agent.wallets.stub!.simulateIncoming(recipientId, 'in-flight-tx')).toBe(true);
+    const cancel = await t.call('POST', `/escrows/${job.id}/cancel`, { role: 'freelancer', token: job.freelancerToken });
+    expect(cancel.status).toBe(409);
+    await t.waitFor(job.id, 'FUNDED');
+  });
+
+  it('operator routes only work on the agent laptop: forced re-payment and clearing all jobs', async () => {
+    const t = await start();
+    const job = await t.listed();
+    const lan = (url: string, payload: unknown) =>
+      t.agent.app.inject({ method: 'POST', url, remoteAddress: '192.168.1.50', payload: payload as object });
+    expect((await lan(`/escrows/${job.id}/retry-step`, { force: true })).statusCode).toBe(403);
+    expect((await lan(`/escrows/${job.id}/retry-step`, {})).statusCode).toBe(200); // a plain nudge is harmless
+    expect((await lan('/dev/reset', {})).statusCode).toBe(403);
+    expect((await t.call('GET', `/escrows/${job.id}`)).status).toBe(200); // nothing was deleted
+    expect((await t.call('POST', `/escrows/${job.id}/retry-step`, { force: true })).status).toBe(200); // loopback
+  });
+
   it('a failed funding payment reopens the listing at once', async () => {
     const t = await start();
     const job = await t.taken();

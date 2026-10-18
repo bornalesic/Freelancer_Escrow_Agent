@@ -84,7 +84,8 @@ Before each run:
    the approval key); a different browser gets "doesn't have the approval key".
 
 During the run, check on the projector: v1 failure shows the failing test name in the explanation;
-"Held in escrow" goes 0 → 50 → 0; both party balances move (client 100 → 50, freelancer 0 → 50).
+"Held in escrow" goes 0 → 50 → 0. Party balances are private to each laptop (the projector shows "private"
+for the other laptops); check client 100 → 50 and freelancer 0 → 50 on their own screens.
 
 Fallback without any service: `?fixture=1` on any screen renders a recorded mid-demo state (slugify
 after v1 failed; `&escrow=esc_b4k3` for the client review).

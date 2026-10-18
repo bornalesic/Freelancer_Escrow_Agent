@@ -58,9 +58,20 @@ export async function requestJson<T>(base: string, path: string, opts: RequestOp
 }
 
 /** A file as a blob URL: lets an <img> show a file that needs a token header. Revoke it when done. */
+/** Raster images are safe to show; they can't run code even when opened on their own. */
+const SAFE_BLOB_TYPES = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp']);
+
+/**
+ * A delivered file as a blob URL. Blob URLs belong to this page's origin, and the agent's
+ * `Content-Security-Policy: sandbox` header does not come with them. A delivered SVG or HTML file opened
+ * from such a URL ("Open image in new tab") would run as this app, on localhost, which the party servers
+ * trust: it could spend the wallet. So anything but a plain raster image is typed as a download.
+ */
 export async function requestBlobUrl(base: string, path: string, headers?: Record<string, string>): Promise<string> {
   const res = await send(base, path, { headers, timeoutMs: 30_000 });
-  return URL.createObjectURL(await res.blob());
+  const blob = await res.blob();
+  const type = blob.type.split(';')[0]!.trim().toLowerCase();
+  return URL.createObjectURL(SAFE_BLOB_TYPES.has(type) ? blob : new Blob([blob], { type: 'application/octet-stream' }));
 }
 
 export function errorMessage(err: unknown): string {
